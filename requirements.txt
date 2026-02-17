@@ -1,0 +1,31 @@
+# Core dependencies for DeepSeek-R1-Distill-Qwen-14B
+torch>=2.0.0
+transformers>=4.37.0
+accelerate>=0.25.0
+sentencepiece>=0.1.99
+protobuf>=3.20.0
+tokenizers>=0.15.0
+
+# For training and fine-tuning
+peft>=0.7.0
+bitsandbytes>=0.41.0
+datasets>=2.14.0
+trl>=0.7.0
+
+# For inference optimization
+vllm>=0.3.0
+optimum>=1.16.0
+
+# Utilities
+numpy>=1.24.0
+pandas>=2.0.0
+scipy>=1.10.0
+tqdm>=4.65.0
+safetensors>=0.4.0
+
+# Optional: For distributed training
+deepspeed>=0.12.0
+
+# Optional: For monitoring
+wandb>=0.15.0
+tensorboard>=2.14.0

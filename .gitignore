@@ -1,0 +1,33 @@
+# .gitignore
+
+# Dependencies
+node_modules/
+venv/
+__pycache__/
+*.pyc
+.pyo
+
+# Next.js
+.next/
+out/
+
+# Model files
+models/
+cache/
+checkpoints/
+output/
+
+# Environment
+.env
+.env.local
+.env.production
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
