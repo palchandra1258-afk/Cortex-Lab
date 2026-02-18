@@ -7,7 +7,9 @@
 
 **Cortex Lab** is a fully local, resource-efficient personal AI system that acts as a **continuous conversational memory and reasoning layer**. Unlike traditional chatbots that forget past interactions, Cortex Lab builds a persistent cognitive model of your life—learning from daily conversations, extracting meaningful patterns, and evolving its understanding over time.
 
-**Key Innovation:** A multi-layer Agentic RAG (Retrieval-Augmented Generation) architecture powered by a fine-tuned lightweight LLM (DeepSeek-R1-1.5B), designed to run entirely on consumer hardware (NVIDIA GTX 1650, 4GB VRAM) while delivering advanced reasoning capabilities.
+**Key Innovation:** A **9-layer Agentic RAG** (Retrieval-Augmented Generation) architecture synthesizing **25+ cutting-edge techniques** from top-tier venues (ICLR, NeurIPS, EMNLP, NAACL, ACL 2023-2025), powered by a fine-tuned lightweight LLM (DeepSeek-R1-1.5B), designed to run entirely on consumer hardware (NVIDIA GTX 1650, 4GB VRAM) while delivering state-of-the-art reasoning capabilities.
+
+> 📖 **Deep Technical Reference:** For complete implementation details, architecture diagrams, code examples, and research citations for all 25+ techniques, see **[RAG-Architecture.md](RAG-Architecture.md)** — the 3,400+ line production-ready implementation guide.
 
 ---
 
@@ -17,9 +19,13 @@
 2. [Core Vision](#core-vision)
 3. [System Architecture](#system-architecture)
 4. [Core Functionalities](#core-functionalities)
-5. [Technical Specifications](#technical-specifications)
-6. [Implementation Roadmap](#implementation-roadmap)
-7. [Success Metrics](#success-metrics)
+5. [Advanced RAG Techniques](#advanced-rag-techniques)
+6. [Production Optimizations](#production-optimizations)
+7. [Technical Specifications](#technical-specifications)
+8. [Implementation Roadmap](#implementation-roadmap)
+9. [Success Metrics](#success-metrics)
+10. [Educational Value](#educational-value)
+11. [Getting Started](#getting-started)
 
 ---
 
@@ -124,102 +130,114 @@ Traditional RAG systems treat memory as a pile of documents. Cortex Lab treats m
 
 ## 🏗️ System Architecture
 
-### 3.1 High-Level Architecture
+### 3.1 High-Level Architecture (9-Layer Agentic RAG)
+
+> 📖 For the full architecture with implementation code, see [RAG-Architecture.md § Section 3](RAG-Architecture.md).
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                        CORTEX LAB ARCHITECTURE                              │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ╔═══════════════════════════════════════════════════════════════════════╗  │
-│  ║                    LAYER 1: INPUT PROCESSING                          ║  │
-│  ╚═══════════════════════════════════════════════════════════════════════╝  │
-│                                                                             │
-│    📝 Text Input          🎤 Voice Input (Whisper ASR)                      │
-│              ↓                      ↓                                       │
-│    ┌─────────────────────────────────────────────────────────┐             │
-│    │         Memory Event Builder (Classifier + NER)         │             │
-│    │  • Type: episodic/semantic/reflective/procedural        │             │
-│    │  • Entities: people, projects, topics                   │             │
-│    │  • Emotion: happy/sad/anxious/excited                   │             │
-│    │  • Importance: 0.0-1.0 score                            │             │
-│    └─────────────────────────────────────────────────────────┘             │
-│                            ↓                                                │
-│  ╔═══════════════════════════════════════════════════════════════════════╗  │
-│  ║                    LAYER 2: STORAGE                                   ║  │
-│  ╚═══════════════════════════════════════════════════════════════════════╝  │
-│                                                                             │
-│    ┌──────────────┐  ┌──────────────┐  ┌──────────────┐                   │
-│    │  Vector DB   │  │ Relational   │  │  Knowledge   │                   │
-│    │  (FAISS)     │  │  (DuckDB)    │  │  Graph (NX)  │                   │
-│    │              │  │              │  │              │                   │
-│    │ • Embeddings │  │ • Metadata   │  │ • Entities   │                   │
-│    │ • Semantic   │  │ • Timestamps │  │ • Relations  │                   │
-│    │   Search     │  │ • Filters    │  │ • Causal     │                   │
-│    └──────────────┘  └──────────────┘  └──────────────┘                   │
-│                                                                             │
-│  ╔═══════════════════════════════════════════════════════════════════════╗  │
-│  ║              LAYER 3: AGENTIC RETRIEVAL                               ║  │
-│  ╚═══════════════════════════════════════════════════════════════════════╝  │
-│                                                                             │
-│    ┌────────────────────────────────────────────────────────┐              │
-│    │           Query Intent Detector                        │              │
-│    │  "What did I decide about my career?"                  │              │
-│    │     ↓                                                  │              │
-│    │  Intent: CAUSAL + DECISION + CAREER                   │              │
-│    └────────────────────────────────────────────────────────┘              │
-│                            ↓                                                │
-│    ┌─────────────────────────────────────────────────────────────┐         │
-│    │              Specialized Agent Router                       │         │
-│    │  ┌──────────┐ ┌──────────┐ ┌───────────┐ ┌──────────────┐  │         │
-│    │  │Timeline  │ │ Causal   │ │Reflection │ │ Arbitration  │  │         │
-│    │  │ Agent    │ │ Agent    │ │ Agent     │ │ Agent        │  │         │
-│    │  │          │ │          │ │           │ │              │  │         │
-│    │  │"When did"│ │"Why did" │ │"How did I"│ │"Which belief"│  │         │
-│    │  │"What was"│ │"What led"│ │"changes"  │ │"is correct?" │  │         │
-│    │  └──────────┘ └──────────┘ └───────────┘ └──────────────┘  │         │
-│    └─────────────────────────────────────────────────────────────┘         │
-│                            ↓                                                │
-│    ┌────────────────────────────────────────────────────────┐              │
-│    │         Multi-Channel Hybrid Retrieval                 │              │
-│    │  • Dense (BGE embeddings)      [weight: 0.4]          │              │
-│    │  • Sparse (BM25 keyword)       [weight: 0.3]          │              │
-│    │  • Graph (entity traversal)    [weight: 0.2]          │              │
-│    │  • SQL (exact filters)         [weight: 0.1]          │              │
-│    │                                                        │              │
-│    │  → Reciprocal Rank Fusion (RRF) → Top-K Results      │              │
-│    └────────────────────────────────────────────────────────┘              │
-│                                                                             │
-│  ╔═══════════════════════════════════════════════════════════════════════╗  │
-│  ║              LAYER 4: REASONING & GENERATION                          ║  │
-│  ╚═══════════════════════════════════════════════════════════════════════╝  │
-│                                                                             │
-│    ┌────────────────────────────────────────────────────────┐              │
-│    │      Fine-Tuned DeepSeek-R1-1.5B (Quantized)          │              │
-│    │                                                        │              │
-│    │  Input: Query + Retrieved Memories + Agent Context    │              │
-│    │  Process: Multi-step reasoning with <think> tags      │              │
-│    │  Output: Answer + Evidence + Confidence               │              │
-│    │                                                        │              │
-│    │  Optimization:                                         │              │
-│    │  • 4-bit quantization (bnb)                           │              │
-│    │  • LoRA fine-tuning on user conversations             │              │
-│    │  • Runs on 4GB VRAM                                   │              │
-│    └────────────────────────────────────────────────────────┘              │
-│                                                                             │
-│  ╔═══════════════════════════════════════════════════════════════════════╗  │
-│  ║              LAYER 5: WEB INTERFACE                                   ║  │
-│  ╚═══════════════════════════════════════════════════════════════════════╝  │
-│                                                                             │
-│    ┌────────────────────────────────────────────────────────┐              │
-│    │              Next.js Frontend                          │              │
-│    │  • Chat interface with thinking visualization          │              │
-│    │  • Memory browser with timeline view                   │              │
-│    │  • Knowledge graph explorer                            │              │
-│    │  • System health dashboard                             │              │
-│    └────────────────────────────────────────────────────────┘              │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                    CORTEX LAB: 9-LAYER AGENTIC RAG ARCHITECTURE                     │
+│                    (Production Architecture — February 2026)                        │
+├─────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                     │
+│  ╔═══════════════════════════════════════════════════════════════════════════════╗  │
+│  ║  LAYER 0: INPUT ACQUISITION                                                  ║  │
+│  ║  📝 Text  │  🎤 Voice (Whisper ASR)  │  📄 Document Import                   ║  │
+│  ╚═══════════════════════════════════════════════════════════════════════════════╝  │
+│                                    ↓                                                │
+│  ╔═══════════════════════════════════════════════════════════════════════════════╗  │
+│  ║  LAYER 1: MEMORY INGESTION & CLASSIFICATION                                  ║  │
+│  ║  • Memory Type Classifier (SetFit, ~20ms)                                    ║  │
+│  ║  • Emotion Detector (DistilBERT, ~30ms)                                      ║  │
+│  ║  • Entity Extraction + Coreference Resolution                                ║  │
+│  ║  • Causal Link Detection                                                     ║  │
+│  ║  • Contextual Chunking (Anthropic 2024) — session context prepended          ║  │
+│  ║  • Semantic Chunking — breaks at meaning boundaries                          ║  │
+│  ╚═══════════════════════════════════════════════════════════════════════════════╝  │
+│                                    ↓                                                │
+│  ╔═══════════════════════════════════════════════════════════════════════════════╗  │
+│  ║  LAYER 2: MULTI-REPRESENTATION STORAGE                                       ║  │
+│  ║  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐        ║  │
+│  ║  │ Vector Store  │ │ Relational   │ │ Knowledge    │ │ Proposition  │        ║  │
+│  ║  │ (FAISS)      │ │ (DuckDB)     │ │ Graph (NX)   │ │ Index        │        ║  │
+│  ║  │ BGE 384d     │ │ Metadata     │ │ Entities     │ │ Atomic Facts │        ║  │
+│  ║  └──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘        ║  │
+│  ║                                                                              ║  │
+│  ║  RAPTOR Hierarchical Tree: L0 Raw → L1 Daily → L2 Weekly → L3 Monthly → L4  ║  │
+│  ║  Tiered Vector Storage: HNSW (hot) → IVF-SQ8 (warm) → IVF-PQ (cold)         ║  │
+│  ╚═══════════════════════════════════════════════════════════════════════════════╝  │
+│                                    ↓                                                │
+│  ╔═══════════════════════════════════════════════════════════════════════════════╗  │
+│  ║  LAYER 3: QUERY INTELLIGENCE & TRANSFORMATION                                ║  │
+│  ║  • Intent Detection (SetFit): TEMPORAL / CAUSAL / REFLECTIVE / FACTUAL       ║  │
+│  ║  • Complexity Scoring (0.0-1.0) → Adaptive routing                           ║  │
+│  ║  • Multi-Query Generation (RAG-Fusion) — 4 query variants                    ║  │
+│  ║  • HyDE — hypothetical answer → embed → retrieve similar                    ║  │
+│  ║  • Step-Back Prompting — abstract question for causal/reflective queries     ║  │
+│  ║  • Query Decomposition — multi-hop breakdown for complex queries             ║  │
+│  ╚═══════════════════════════════════════════════════════════════════════════════╝  │
+│                                    ↓                                                │
+│  ╔═══════════════════════════════════════════════════════════════════════════════╗  │
+│  ║  LAYER 4: AGENT ORCHESTRATION                                                ║  │
+│  ║  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐          ║  │
+│  ║  │Timeline  │ │ Causal   │ │Reflection│ │Planning  │ │Arbitrate │          ║  │
+│  ║  │ Agent    │ │ Agent    │ │ Agent    │ │ Agent    │ │ Agent    │          ║  │
+│  ║  │"When"    │ │"Why"     │ │"How did" │ │"Complex" │ │"Resolve" │          ║  │
+│  ║  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘          ║  │
+│  ║                     ↕ Orchestrated by Meta-Agent                             ║  │
+│  ╚═══════════════════════════════════════════════════════════════════════════════╝  │
+│                                    ↓                                                │
+│  ╔═══════════════════════════════════════════════════════════════════════════════╗  │
+│  ║  LAYER 5: MULTI-CHANNEL HYBRID RETRIEVAL (Async Parallel)                    ║  │
+│  ║  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐          ║  │
+│  ║  │ Dense    │ │ Sparse   │ │ Graph    │ │ Temporal │ │Proposition│          ║  │
+│  ║  │ BGE+FAISS│ │BM25+SPLAD│ │ GraphRAG │ │ SQL+Time │ │ Atomic   │          ║  │
+│  ║  │ w: 0.35  │ │ w: 0.25  │ │ w: 0.20  │ │ w: 0.10  │ │ w: 0.10  │          ║  │
+│  ║  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘          ║  │
+│  ║              ↓ Reciprocal Rank Fusion (RRF) → Cross-Encoder Reranking       ║  │
+│  ╚═══════════════════════════════════════════════════════════════════════════════╝  │
+│                                    ↓                                                │
+│  ╔═══════════════════════════════════════════════════════════════════════════════╗  │
+│  ║  LAYER 6: POST-RETRIEVAL PROCESSING                                          ║  │
+│  ║  • CRAG — Corrective RAG: relevance → CORRECT / AMBIGUOUS / INCORRECT        ║  │
+│  ║  • Failure-Aware Query Refinement — classify WHY, apply fix strategy          ║  │
+│  ║  • Redundancy Removal + Evidence Grouping                                    ║  │
+│  ╚═══════════════════════════════════════════════════════════════════════════════╝  │
+│                                    ↓                                                │
+│  ╔═══════════════════════════════════════════════════════════════════════════════╗  │
+│  ║  LAYER 7: SELF-REFLECTIVE GENERATION                                         ║  │
+│  ║  • DeepSeek-R1-1.5B (4-bit quantized, ~1GB VRAM)                             ║  │
+│  ║  • Self-RAG — generate → critique → revise (max 3 iterations)                ║  │
+│  ║  • FLARE — forward-looking active retrieval mid-generation                   ║  │
+│  ║  • Chain-of-Retrieval — step-by-step retrieval-reasoning for multi-hop       ║  │
+│  ║  • Output: Answer + Evidence Cards + Confidence + Reasoning Trace            ║  │
+│  ╚═══════════════════════════════════════════════════════════════════════════════╝  │
+│                                    ↓                                                │
+│  ╔═══════════════════════════════════════════════════════════════════════════════╗  │
+│  ║  LAYER 8: MEMORY UPDATE & EVOLUTION                                          ║  │
+│  ║  • Belief Evolution Tracking — multi-stage contradiction detection            ║  │
+│  ║  • Memory Consolidation — hierarchical summarization with time decay          ║  │
+│  ║  • Knowledge Graph Update — new entities, relations, causal links             ║  │
+│  ║  • Cache Invalidation — update semantic/exact caches on new data              ║  │
+│  ╚═══════════════════════════════════════════════════════════════════════════════╝  │
+│                                    ↓                                                │
+│  ╔═══════════════════════════════════════════════════════════════════════════════╗  │
+│  ║  LAYER 9: WEB INTERFACE                                                      ║  │
+│  ║  • Next.js 15 + TailwindCSS — Chat, Timeline, Graph Explorer, Dashboard      ║  │
+│  ║  • FastAPI Backend — REST + WebSocket + Background Jobs                      ║  │
+│  ║  • Live thinking visualization (animated <think> tags)                       ║  │
+│  ╚═══════════════════════════════════════════════════════════════════════════════╝  │
+│                                                                                     │
+│  ╔═══════════════════════════════════════════════════════════════════════════════╗  │
+│  ║  CROSS-CUTTING: PRODUCTION OPTIMIZATIONS                                     ║  │
+│  ║  • Multi-Level Caching (exact + semantic + embedding) — 40%+ hit rate        ║  │
+│  ║  • Vector Quantization (HNSW/IVF-SQ8/IVF-PQ) — 80% memory reduction         ║  │
+│  ║  • Async Parallel Retrieval — 5 channels in max(latency) not sum             ║  │
+│  ║  • Token Efficiency — adaptive bypass, compact prompts, early termination    ║  │
+│  ║  • RAGChecker + RAGAS — diagnostic evaluation + continuous improvement       ║  │
+│  ╚═══════════════════════════════════════════════════════════════════════════════╝  │
+│                                                                                     │
+└─────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### 3.2 Data Flow Example
@@ -317,25 +335,40 @@ Falls back to LLM only for edge cases (<10% of time).
 
 ### 4.2 Multi-Layer Storage Architecture
 
-#### **Vector Store (FAISS)**
-- Stores embeddings for semantic search
-- BGE-small-en-v1.5 (384 dimensions)
-- ~100ms retrieval for top-20 results
+#### **Vector Store (FAISS) — Tiered Architecture**
+- Stores embeddings for semantic search using BGE-small-en-v1.5 (384 dimensions)
+- **Hot Tier (HNSW):** Recent memories (last 30 days), ~5ms latency, ~98% recall
+- **Warm Tier (IVF-SQ8):** 30 days–1 year, 4x compressed, ~15ms latency
+- **Cold Tier (IVF-PQ):** Archival (>1 year), 8-16x compressed, ~25ms latency
+- **Result:** ~80% memory reduction vs flat index at scale (160K vectors → ~45MB)
 
 #### **Relational Database (DuckDB)**
-- Structured metadata (timestamps, types, topics)
-- Efficient filtering and aggregation
-- SQL-based exact match queries
+- Structured metadata (timestamps, types, topics, importance scores)
+- Efficient filtering and aggregation for temporal queries
+- SQL-based exact match queries with causal metadata
 
-#### **Knowledge Graph (NetworkX)**
+#### **Knowledge Graph (NetworkX / GraphRAG)**
 - Entity relationships: Person → Project → Topic
 - Causal links: Event A → caused → Event B
-- Graph traversal for multi-hop reasoning
+- **GraphRAG** (Microsoft 2024): Community detection + entity summaries
+- Multi-hop graph traversal for complex reasoning
+
+#### **Proposition Index**
+- **Proposition Retrieval** (EMNLP 2024): Decomposes memories into atomic fact-level units
+- Each proposition is independently retrievable with high precision
+- Complements dense/sparse retrieval for factual queries
+
+#### **RAPTOR Hierarchical Tree**
+- **RAPTOR** (ICLR 2024): 5-level tree from raw memories to yearly summaries
+- Level 0 ↔ Level 4 searched simultaneously for multi-granularity recall
+- Recursive summarization via GMM clustering + LLM
+- Enables both specific detail and high-level pattern retrieval
 
 #### **Belief Evolution Tracker**
 - Detects contradictions: "I love my job" (Jan) vs "I hate my job" (Mar)
-- Tracks refinements: Opinion evolution over time
-- Stores confidence levels and supporting evidence
+- Multi-stage pipeline: semantic similarity → stance detection → temporal analysis
+- Tracks refinements: Opinion evolution over time with confidence levels
+- Stores supporting evidence and causal chains
 
 ### 4.3 Agentic Retrieval System
 
@@ -381,37 +414,47 @@ Unlike simple similarity search, Cortex Lab uses **specialized agents** that und
 
 ### 4.4 Hybrid Retrieval Pipeline
 
-**Multi-Channel Retrieval with Fusion:**
+**5-Channel Async Parallel Retrieval with Fusion:**
 
 ```python
 Query: "What did I learn about machine learning last month?"
 
-Channel 1: Dense (Semantic)
-- Embedding similarity search
+# All 5 channels execute SIMULTANEOUSLY via asyncio (not sequentially)
+# Latency = max(channel_latencies) ≈ 100ms, not sum ≈ 350ms
+
+Channel 1: Dense (BGE + FAISS HNSW)
+- Embedding similarity search across RAPTOR tree levels
 - Top candidates: [memory_15, memory_42, memory_88, ...]
-- Scores: [0.89, 0.85, 0.82, ...]
+- Weight: 0.35  |  Latency: ~100ms
 
-Channel 2: Sparse (Keyword)
-- BM25 ranking on "machine learning"
+Channel 2: Sparse (BM25 + SPLADE)
+- Keyword + learned sparse expansion on "machine learning"
 - Top candidates: [memory_42, memory_15, memory_103, ...]
-- Scores: [12.3, 10.8, 9.5, ...]
+- Weight: 0.25  |  Latency: ~50ms
 
-Channel 3: Graph (Entity)
-- Traverse from "machine_learning" topic node
-- Connected memories via "learned_about" relation
-- Candidates: [memory_15, memory_88, memory_103, ...]
+Channel 3: Graph (GraphRAG Traversal)
+- Traverse from "machine_learning" entity → related events
+- Community summaries for broader context
+- Weight: 0.20  |  Latency: ~80ms
 
-Channel 4: SQL (Temporal)
+Channel 4: Temporal (SQL + Time Filter)
 - Filter: timestamp >= last_month AND topic = "machine_learning"
 - Exact matches: [memory_15, memory_42, memory_88, ...]
+- Weight: 0.10  |  Latency: ~30ms
 
-Fusion (Reciprocal Rank Fusion):
-- Combine ranks from all channels
-- Weighted scoring: dense(0.4) + sparse(0.3) + graph(0.2) + sql(0.1)
-- Final ranking: [memory_15, memory_42, memory_88, memory_103, ...]
+Channel 5: Proposition (Atomic Facts)
+- Fine-grained atomic fact retrieval
+- Candidates: [prop_22, prop_45, prop_89, ...]
+- Weight: 0.10  |  Latency: ~90ms
+
+Fusion: Reciprocal Rank Fusion (RRF)
+→ Cross-Encoder Reranking (BGE-reranker-base, ~220MB)
+→ Top-20 ranked results with evidence scores
 ```
 
-**Result**: More accurate, multi-faceted retrieval compared to single-channel approaches.
+**Result**: 71% latency reduction (async) + higher recall (5 channels) + stronger ranking (cross-encoder reranking) compared to single-channel approaches.
+
+> 📖 See [RAG-Architecture.md § Section 4-6](RAG-Architecture.md) for full retrieval implementation with code.
 
 ### 4.5 Fine-Tuned Reasoning Model
 
@@ -589,9 +632,130 @@ system.add_alias(
 
 ---
 
+## 🧪 Advanced RAG Techniques
+
+> 📖 For complete code implementations, architecture diagrams, and research citations for all techniques below, see **[RAG-Architecture.md](RAG-Architecture.md)** Sections 4-9 and Section 13.
+
+### 5.1 Query Intelligence (Layer 3)
+
+| Technique | Source | What It Does | Query-Time Cost |
+|-----------|--------|-------------|-----------------|
+| **Multi-Query Generation** | RAG-Fusion (2024) | Generates 4 query variants to broaden retrieval surface | ~0.5s (1 LLM call) |
+| **HyDE** | ACL 2023 | Creates hypothetical answer → embeds it → retrieves similar real memories | ~0.4s (1 LLM call) |
+| **Step-Back Prompting** | Google DeepMind 2024 | Generates abstract question for causal/reflective queries ("Why X?" → "What factors influenced X?") | ~0.2s (1 LLM call) |
+| **Query Decomposition** | Multi-hop reasoning | Breaks complex queries into sequential sub-queries | ~0.5s (1 LLM call) |
+| **Adaptive Routing** | Adaptive-RAG (NAACL 2024) | Routes simple queries (skip RAG), moderate (single-pass), complex (full agentic pipeline) | ~20ms (classifier) |
+
+### 5.2 Self-Reflective Generation (Layer 7)
+
+| Technique | Source | What It Does | Impact |
+|-----------|--------|-------------|--------|
+| **Self-RAG** | ICLR 2024 | Generate → Critique → Revise loop (max 3 iterations) with ISREL/ISSUP/ISUSE tokens | +15-20% faithfulness |
+| **CRAG** | 2024 | Evaluates retrieval quality → CORRECT / AMBIGUOUS / INCORRECT → triggers refinement | +10% answer quality |
+| **FLARE** | EMNLP 2023 | Forward-looking active retrieval: detects low-confidence tokens mid-generation, re-retrieves | +12% on multi-hop |
+| **Chain-of-Retrieval** | NeurIPS 2024 | Step-by-step retrieval-reasoning chains for complex multi-hop queries | +20% multi-hop accuracy |
+
+### 5.3 Advanced Indexing (Layer 1-2)
+
+| Technique | Source | What It Does | When It Runs |
+|-----------|--------|-------------|--------------|
+| **Contextual Chunking** | Anthropic 2024 | Prepends session/document context to each chunk before embedding | Ingestion (0ms query cost) |
+| **Semantic Chunking** | Pinecone 2024 | Breaks text at natural meaning boundaries via embedding similarity | Ingestion (0ms query cost) |
+| **Proposition Retrieval** | EMNLP 2024 | Decomposes memories into atomic, independently retrievable facts | Ingestion (0ms query cost) |
+| **RAPTOR** | ICLR 2024 | 5-level hierarchical tree: Raw → Daily → Weekly → Monthly → Yearly | Ingestion + background |
+
+### 5.4 Failure Recovery
+
+| Technique | What It Does |
+|-----------|-------------|
+| **Failure-Aware Query Refinement** | Classifies WHY retrieval failed (vocabulary mismatch / too specific / too vague / temporal miss) and applies targeted fix strategy |
+| **Automatic Retry** | If CRAG = INCORRECT, refine query and re-retrieve (max 2 retries) |
+| **Graceful Degradation** | If all retries fail, honestly say "I don't have enough memories about this" with suggestions |
+
+---
+
+## ⚡ Production Optimizations
+
+> 📖 For detailed implementation code, see **[RAG-Architecture.md § Section 13](RAG-Architecture.md)**.
+
+### 6.1 Multi-Level Caching
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  LEVEL 1: EXACT CACHE         │ Key: query_hash  │ <1ms  │ LRU    │
+│  LEVEL 2: SEMANTIC CACHE      │ Key: embedding    │ ~5ms  │ cosine │
+│  LEVEL 3: EMBEDDING CACHE     │ Key: text_hash    │ <1ms  │ perm   │
+├─────────────────────────────────────────────────────────────────────┤
+│  Expected Hit Rate: > 40%  │  Cache miss penalty: 0ms (normal flow)│
+│  Invalidation: On new memory ingestion about same topic             │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 6.2 Vector Quantization & Hot/Cold Tiering
+
+| Tier | Index Type | Compression | Latency | Recall | Memory (100K vecs) |
+|------|-----------|-------------|---------|--------|---------------------|
+| **Hot** (< 30 days) | HNSW | None (float32) | ~5ms | ~98% | ~15MB |
+| **Warm** (30d-1yr) | IVF-SQ8 | 4x | ~15ms | ~95% | ~20MB |
+| **Cold** (> 1yr) | IVF-PQ | 8-16x | ~25ms | ~90% | ~10MB |
+| **Total** | — | ~80% savings | — | — | **~45MB** (vs ~250MB raw) |
+
+Monthly background migration between tiers based on memory age.
+
+### 6.3 Token Efficiency Strategies
+
+| Strategy | Mechanism | Savings |
+|----------|-----------|---------|
+| **Adaptive Bypass** | Skip Multi-Query, HyDE, Self-RAG for simple queries (complexity < 0.3) | 60%+ queries use ≤3 LLM calls |
+| **Prompt Batching** | Combine Multi-Query + HyDE into single LLM call | Saves 1 LLM call (~0.5s) |
+| **Early Termination** | If Self-RAG scores > 0.85 on first pass → stop | ~70% terminate in 1st iteration |
+| **KV-Cache Reuse** | Keep model loaded with keep_alive, reuse prefix caches | 30-50% token reduction |
+
+**Resulting Token Budget:**
+
+| Query Type | Tokens | LLM Calls | Latency |
+|-----------|--------|-----------|---------|
+| Simple | ~500 | 1 | ~1s |
+| Moderate | ~1,500 | 3 | ~2.5s |
+| Complex | ~3,000 | 5 | ~5s |
+
+### 6.4 Async Parallel Retrieval
+
+All 5 retrieval channels execute simultaneously via asyncio:
+- **Sequential (naive):** 100 + 50 + 80 + 30 + 90 = **350ms**
+- **Parallel (async):** max(100, 50, 80, 30, 90) = **~100ms**
+- **Latency savings: 71%**
+
+### 6.5 Continuous Self-Improvement Loop
+
+```
+Query-Response Cycle → Log (query, results, scores, feedback)
+                                    ↓
+                Weekly Failure Analysis
+                ├─ Retrieval Failures → Hard negatives for embedding fine-tuning
+                ├─ Generation Failures → Prompt template A/B testing
+                ├─ Routing Failures → Retrain intent classifier
+                └─ Latency Outliers → Adjust complexity thresholds
+                                    ↓
+                Monthly Auto-Optimization
+                ├─ Re-tune RRF channel weights
+                ├─ Fine-tune BGE-small with LoRA on user data (5-15% accuracy gain)
+                ├─ Recalibrate ANN index parameters
+                └─ Rebuild RAPTOR tree with new cluster data
+```
+
+### 6.6 Evaluation Framework
+
+| Framework | Metrics | Purpose |
+|-----------|---------|---------|
+| **RAGAS** | Faithfulness, Relevance, Context Recall, Answer Similarity | Core quality metrics |
+| **RAGChecker** (NeurIPS 2024) | Context Entity Recall, Noise Robustness, Negative Rejection, Counterfactual Robustness, Information Integration, Utilization Rate | Fine-grained diagnostic pinpointing |
+
+---
+
 ## 🔧 Technical Specifications
 
-### 5.1 Hardware Requirements
+### 7.1 Hardware Requirements
 
 #### **Minimum Configuration** (Target: GTX 1650, 4GB VRAM)
 | Component | Specification | Usage |
@@ -609,7 +773,7 @@ system.add_alias(
 | **RAM** | 16GB | Larger memory cache |
 | **Storage** | 50GB SSD | Years of memories |
 
-### 5.2 Software Stack
+### 7.2 Software Stack
 
 #### **Core Dependencies**
 ```
@@ -625,12 +789,15 @@ Whisper (faster-whisper)
 #### **Model Components**
 | Component | Model | Size | Purpose |
 |-----------|-------|------|---------|
-| **LLM** | DeepSeek-R1-1.5B (4-bit) | 1.5GB | Reasoning |
-| **Embeddings** | BGE-small-en-v1.5 | 133MB | Semantic search |
-| **ASR** | Whisper-base | 142MB | Voice transcription |
-| **Classifiers** | SetFit + DistilBERT | 50MB | Fast classification |
+| **LLM** | DeepSeek-R1-1.5B (4-bit) | ~1GB VRAM | Reasoning + generation |
+| **Embeddings** | BGE-small-en-v1.5 | ~130MB VRAM | Semantic search (384d) |
+| **Reranker** | BGE-reranker-base | ~220MB VRAM | Cross-encoder reranking |
+| **ASR** | Whisper-base | 142MB disk | Voice transcription |
+| **Classifiers** | SetFit + DistilBERT | ~50MB total | Fast classification (<50ms) |
+| **Sparse** | SPLADE | CPU only | Learned sparse expansion |
 
-**Total Disk**: ~3.5GB models + data
+**Total VRAM at runtime**: ~1.5GB (leaving ~2.5GB headroom on GTX 1650)
+**Total Disk**: ~4GB models + data
 
 #### **Backend Stack**
 - **API Framework**: FastAPI (async, WebSocket support)
@@ -644,7 +811,7 @@ Whisper (faster-whisper)
 - **Graph**: vis.js (force-directed layout)
 - **State**: React Context + hooks
 
-### 5.3 Performance Targets
+### 7.3 Performance Targets
 
 | Metric | Target | Measurement |
 |--------|--------|-------------|
@@ -652,13 +819,19 @@ Whisper (faster-whisper)
 | **Voice Transcription** | < 2s | 30s audio → text |
 | **Query Response (Simple)** | < 2s | Single-agent queries |
 | **Query Response (Complex)** | < 5s | Multi-agent queries |
-| **Retrieval Precision@10** | > 0.70 | Synthetic dataset |
+| **Retrieval Precision@10** | > 0.75 | Multi-channel fusion |
+| **Answer Faithfulness** | > 0.85 | RAGAS + RAGChecker eval |
 | **Classification Accuracy** | > 80% | Memory type detection |
+| **Vector Search P99** | < 50ms | ANN-tuned HNSW/IVF-PQ |
+| **Cache Hit Rate** | > 40% | Semantic + exact caching |
+| **Index Memory** | < 500MB | PQ/SQ8 compressed vectors |
 | **Storage Growth** | < 1GB/year | With consolidation |
 
 ---
 
 ## 🗺️ Implementation Roadmap
+
+> 📖 For detailed week-by-week breakdown with implementation tasks, see [RAG-Architecture.md § Section 10](RAG-Architecture.md).
 
 ### Phase 1: Foundation (Weeks 1-3)
 
@@ -813,15 +986,39 @@ Whisper (faster-whisper)
 
 ---
 
+### Phase 8: Advanced Enhancements (Weeks 19-20)
+
+#### Week 19: Production Optimizations
+- [ ] Implement multi-level caching (exact + semantic + embedding)
+- [ ] Deploy vector quantization (IVF-PQ/SQ8 tiered storage)
+- [ ] Tune ANN index parameters (HNSW ef_search, IVF nprobe)
+- [ ] Build async parallel retrieval pipeline
+- [ ] Implement contextual chunking pipeline
+- [ ] Add semantic chunking with boundary detection
+
+#### Week 20: Self-Improvement Loop
+- [ ] Integrate Step-Back Prompting for causal queries
+- [ ] Build RAGChecker diagnostic evaluation
+- [ ] Implement failure-aware query refinement
+- [ ] Add Chain-of-Retrieval for multi-hop queries
+- [ ] Set up token efficiency optimization (adaptive bypass, prompt batching)
+- [ ] Build retriever fine-tuning pipeline (BGE + LoRA on user data)
+- [ ] Deploy continuous self-improvement feedback loop
+
+**Milestone 8**: All 13 advanced enhancements operational. System self-improves over time.
+
+---
+
 ## 📊 Success Metrics
 
 ### Retrieval Quality
 | Metric | Target | Description |
 |--------|--------|-------------|
-| Precision@5 | > 0.70 | Top 5 results relevant |
-| Precision@10 | > 0.60 | Top 10 results relevant |
-| Recall@10 | > 0.75 | Coverage of relevant memories |
-| MRR | > 0.65 | Mean Reciprocal Rank |
+| Precision@5 | > 0.80 | Top 5 results relevant |
+| Precision@10 | > 0.75 | Top 10 results relevant |
+| Recall@10 | > 0.80 | Coverage of relevant memories |
+| MRR | > 0.75 | Mean Reciprocal Rank |
+| Faithfulness | > 0.85 | RAGAS + RAGChecker evaluation |
 
 ### Classification Accuracy
 | Component | Target | Description |
@@ -837,8 +1034,11 @@ Whisper (faster-whisper)
 | Ingestion Latency | < 500ms | Text input |
 | Query Latency (Simple) | < 2s | Single-agent |
 | Query Latency (Complex) | < 5s | Multi-agent |
+| Vector Search P99 | < 50ms | ANN-tuned HNSW/IVF-PQ |
+| Cache Hit Rate | > 40% | Semantic + exact caching |
 | Memory Footprint | < 4GB | At runtime |
-| GPU VRAM Usage | < 4GB | Model inference |
+| GPU VRAM Usage | < 1.5GB | Model inference |
+| Index Memory | < 500MB | PQ/SQ8 compressed vectors |
 
 ### System Quality
 - [ ] 100% offline operation (no internet required)
@@ -846,6 +1046,8 @@ Whisper (faster-whisper)
 - [ ] LLM fallback rate < 15% (lightweight classifiers handle most)
 - [ ] Consolidation ratio > 10x (after 1 year)
 - [ ] 90% test coverage for core modules
+- [ ] Cache hit rate > 40% within first month of use
+- [ ] Self-improvement: 5-15% retrieval accuracy gain after embedding fine-tuning
 
 ---
 
@@ -854,25 +1056,31 @@ Whisper (faster-whisper)
 Cortex Lab serves as a **comprehensive learning project** covering:
 
 ### AI/ML Concepts
-- ✅ Retrieval-Augmented Generation (RAG)
-- ✅ Multi-agent systems
+- ✅ Retrieval-Augmented Generation (RAG) — including Agentic RAG, Self-RAG, CRAG, FLARE
+- ✅ Multi-agent systems with orchestration
 - ✅ Fine-tuning with LoRA/QLoRA
-- ✅ Quantization (4-bit, 8-bit)
-- ✅ Embedding models
-- ✅ Knowledge graphs
+- ✅ Quantization (4-bit, 8-bit, vector PQ/SQ8)
+- ✅ Embedding models + retriever fine-tuning
+- ✅ Knowledge graphs (GraphRAG)
+- ✅ Hierarchical indexing (RAPTOR)
+- ✅ Advanced query transformation (HyDE, RAG-Fusion, Step-Back Prompting)
+- ✅ Production caching strategies
+- ✅ Async pipeline architecture
 
 ### Software Engineering
-- ✅ Microservices architecture
-- ✅ Database design (SQL + NoSQL + Graph)
+- ✅ 9-layer modular architecture
+- ✅ Database design (SQL + NoSQL + Graph + Vector)
 - ✅ API design (REST + WebSocket)
-- ✅ Frontend development (Next.js)
-- ✅ Testing and evaluation
+- ✅ Frontend development (Next.js 15)
+- ✅ Testing, evaluation, and continuous improvement
+- ✅ Performance optimization and profiling
 
 ### Research Skills
-- ✅ Synthetic dataset generation
-- ✅ Metric design
-- ✅ Ablation studies
-- ✅ Performance profiling
+- ✅ Reading and implementing research papers (ICLR, NeurIPS, EMNLP, NAACL, ACL)
+- ✅ Metric design (RAGAS + RAGChecker diagnostics)
+- ✅ Ablation studies across retrieval channels
+- ✅ Performance profiling and ANN benchmarking
+- ✅ Continuous feedback loop design
 
 ---
 
@@ -957,14 +1165,19 @@ docs/
 ### Short-term (3-6 months)
 - Mobile app (iOS/Android) with on-device inference
 - Voice-first interface (wake word detection)
-- Multi-modal support (images, documents)
+- Multi-modal support (images, documents, PDFs)
 - Collaborative memories (shared with friends/family)
+- ColBERT late-interaction retrieval for even higher precision
 
 ### Long-term (1-2 years)
 - Federated learning (learn from multiple users, preserve privacy)
-- Proactive insights (predict user needs)
+- Proactive insights (predict user needs before they ask)
 - Goal tracking and achievement analysis
 - Integration with productivity tools (calendar, email, notes)
+- RAGRouter with contrastive learning for optimal retrieval strategy selection
+- TreeRAG (ACL 2025) for hierarchical connectivity preservation
+
+> 📖 **Full Deep Dive:** For all implementation details, code, architecture diagrams, and 100+ research paper references, see **[RAG-Architecture.md](RAG-Architecture.md)** — the comprehensive 3,400+ line production guide.
 
 ---
 
@@ -1006,4 +1219,6 @@ MIT License - See [LICENSE](LICENSE) for details.
 
 **Built with ❤️ for the future of personal AI**
 
-*Cortex Lab: Your Second Brain, Locally Powered*
+*Cortex Lab: Your Second Brain — 25+ Research Techniques, 9-Layer Architecture, Locally Powered* 🧠🚀
+
+> 📖 **[RAG-Architecture.md](RAG-Architecture.md)** — The complete technical reference (3,400+ lines, 13 sections, full implementation code)
