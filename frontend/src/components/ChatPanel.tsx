@@ -225,7 +225,7 @@ export function ChatPanel({ modelStatus, onTitleUpdate }: Props) {
                 onKeyDown={handleKeyDown}
                 placeholder={
                   isOnline
-                    ? "Ask DeepSeek anything…"
+                    ? "Ask Cortex Lab anything…"
                     : "Model is loading — please wait…"
                 }
                 disabled={!isOnline}
@@ -258,7 +258,7 @@ export function ChatPanel({ modelStatus, onTitleUpdate }: Props) {
             <div className="flex items-center justify-between border-t border-surface-800/30 px-4 py-2 text-[11px] text-surface-600">
               <div className="flex items-center gap-1.5">
                 <Sparkles size={11} />
-                <span>DeepSeek-R1-Distill-Qwen-14B</span>
+                <span>DeepSeek-R1-1.5B</span>
               </div>
               <span>
                 Temp {settings.temperature} · Top-P {settings.topP} · Max{" "}

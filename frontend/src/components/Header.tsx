@@ -41,10 +41,10 @@ export function Header({ modelStatus, sidebarOpen, onToggleSidebar }: Props) {
         )}
         <div className="flex items-center gap-2">
           <h1 className="text-sm font-semibold text-surface-200">
-            DeepSeek R1 Chat
+            Cortex Lab
           </h1>
           <span className="rounded-md bg-deepseek-600/15 px-1.5 py-0.5 text-[10px] font-medium text-deepseek-400">
-            14B
+            1.5B
           </span>
         </div>
       </div>

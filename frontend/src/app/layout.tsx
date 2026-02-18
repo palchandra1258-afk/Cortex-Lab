@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "DeepSeek R1 · Chat Interface",
+  title: "Cortex Lab · AI Chat Interface",
   description:
-    "Advanced chat interface for DeepSeek-R1-Distill-Qwen-14B with reasoning visualization",
+    "Advanced chat interface powered by DeepSeek-R1-1.5B with reasoning visualization",
   icons: { icon: "/favicon.ico" },
 };
 

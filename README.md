@@ -1,12 +1,12 @@
-# DeepSeek-R1-Distill-Qwen-14B Setup
+# Cortex Lab - DeepSeek-R1-1.5B Setup
 
-This repository contains setup scripts and tools for working with DeepSeek-R1-Distill-Qwen-14B, a 14B parameter reasoning model distilled from DeepSeek-R1.
+This repository contains setup scripts and tools for Cortex Lab, powered by DeepSeek-R1-1.5B, a lightweight 1.5B parameter reasoning model.
 
 ## Model Information
 
-- **Model**: DeepSeek-R1-Distill-Qwen-14B
-- **Parameters**: 14 Billion
-- **Base Model**: Qwen2.5-14B
+- **Model**: DeepSeek-R1-1.5B
+- **Parameters**: 1.5 Billion
+- **Base Model**: DeepSeek-R1
 - **Context Length**: 32K tokens
 - **License**: MIT
 - **Use Cases**: Reasoning tasks, mathematics, coding, instruction following
@@ -14,18 +14,17 @@ This repository contains setup scripts and tools for working with DeepSeek-R1-Di
 ## Features
 
 - ✅ Easy model download and setup
-- ✅ Support for 4-bit and 8-bit quantization
-- ✅ LoRA/QLoRA fine-tuning
+- ✅ Lightweight model (runs on most GPUs)
 - ✅ Interactive chat interface
 - ✅ Batch inference
-- ✅ Training scripts with full customization
+- ✅ Full customization
 
 ## Requirements
 
 ### Minimum Hardware
-- **RAM**: 32GB+ (16GB with quantization)
-- **GPU**: 24GB+ VRAM (8GB with 4-bit quantization)
-- **Disk**: 30GB free space
+- **RAM**: 8GB+
+- **GPU**: 4GB+ VRAM (or CPU)
+- **Disk**: 10GB free space
 
 ### Recommended Hardware
 - **GPU**: NVIDIA RTX 3090/4090 or A100

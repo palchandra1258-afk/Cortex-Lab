@@ -39,10 +39,10 @@ export function Sidebar({
       <div className="flex items-center justify-between p-4 border-b border-surface-800/40">
         <div className="flex items-center gap-2">
           <div className="h-7 w-7 rounded-lg bg-deepseek-600 flex items-center justify-center">
-            <span className="text-xs font-bold text-white">R1</span>
+            <span className="text-xs font-bold text-white">CL</span>
           </div>
           <span className="text-sm font-semibold text-surface-200">
-            DeepSeek
+            Cortex Lab
           </span>
         </div>
         <button
@@ -99,7 +99,7 @@ export function Sidebar({
         <div className="rounded-lg bg-surface-900/40 px-3 py-2.5">
           <p className="text-[10px] font-medium text-surface-500">Model</p>
           <p className="text-xs text-surface-300 mt-0.5">
-            DeepSeek-R1-Distill-Qwen-14B
+            DeepSeek-R1-1.5B
           </p>
         </div>
       </div>

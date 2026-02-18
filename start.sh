@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Launch script for DeepSeek-R1 Chat Interface
+# Launch script for Cortex Lab Chat Interface
 # Starts BOTH the Python backend and the Next.js frontend
 #
 
@@ -10,7 +10,7 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 
 echo ""
 echo "  ╔═══════════════════════════════════════════════════════╗"
-echo "  ║       DeepSeek R1 · Full-Stack Chat Interface        ║"
+echo "  ║          Cortex Lab · Full-Stack Chat Interface      ║"
 echo "  ╚═══════════════════════════════════════════════════════╝"
 echo ""
 

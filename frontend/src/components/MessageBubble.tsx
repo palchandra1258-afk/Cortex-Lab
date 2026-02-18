@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
@@ -15,6 +15,7 @@ import {
   Check,
   Clock,
   Zap,
+  Sparkles,
 } from "lucide-react";
 
 interface Props {
@@ -24,6 +25,7 @@ interface Props {
 export function MessageBubble({ message }: Props) {
   const [showThinking, setShowThinking] = useState(false);
   const [copied, setCopied] = useState(false);
+  const thinkingEndRef = useRef<HTMLDivElement>(null);
 
   const isUser = message.role === "user";
   const hasThinking = !!message.thinking;
@@ -31,6 +33,7 @@ export function MessageBubble({ message }: Props) {
   // Parse thinking from streamed content
   let displayContent = message.content;
   let streamedThinking: string | null = null;
+  let isCurrentlyThinking = false;
 
   if (!isUser && message.content.includes("<think>")) {
     const thinkStart = message.content.indexOf("<think>") + 7;
@@ -39,12 +42,29 @@ export function MessageBubble({ message }: Props) {
       streamedThinking = message.content.slice(thinkStart, thinkEnd).trim();
       displayContent = message.content.slice(thinkEnd + 8).trim();
     } else {
+      // Still thinking
       streamedThinking = message.content.slice(thinkStart).trim();
       displayContent = "";
+      isCurrentlyThinking = message.isStreaming || false;
     }
   }
 
   const thinking = message.thinking || streamedThinking;
+  const hasOutput = displayContent.trim().length > 0;
+
+  // Auto-expand thinking when streaming
+  useEffect(() => {
+    if (isCurrentlyThinking && thinking) {
+      setShowThinking(true);
+    }
+  }, [isCurrentlyThinking, thinking]);
+
+  // Auto-scroll thinking panel
+  useEffect(() => {
+    if (showThinking && isCurrentlyThinking) {
+      thinkingEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [thinking, showThinking, isCurrentlyThinking]);
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(displayContent || message.content);
@@ -73,7 +93,7 @@ export function MessageBubble({ message }: Props) {
           {/* Role label */}
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold text-surface-300">
-              {isUser ? "You" : "DeepSeek R1"}
+              {isUser ? "You" : "Cortex Lab"}
             </span>
             {message.isStreaming && (
               <span className="flex items-center gap-1 text-[10px] text-deepseek-400">
@@ -86,73 +106,123 @@ export function MessageBubble({ message }: Props) {
             )}
           </div>
 
-          {/* Thinking panel */}
+          {/* Live Thinking Panel - Enhanced */}
           {thinking && (
-            <div className="thinking-panel rounded-xl overflow-hidden">
+            <div className={`thinking-panel rounded-xl overflow-hidden border transition-all duration-300 ${
+              isCurrentlyThinking 
+                ? 'border-deepseek-500/30 bg-deepseek-500/5 shadow-lg shadow-deepseek-500/10' 
+                : 'border-deepseek-500/10 bg-surface-900/40'
+            }`}>
               <button
                 onClick={() => setShowThinking((p) => !p)}
-                className="flex w-full items-center gap-2 px-3.5 py-2.5 text-xs font-medium text-deepseek-300 hover:bg-deepseek-500/5 transition-colors"
+                className={`flex w-full items-center gap-2.5 px-4 py-3 text-sm font-medium transition-colors ${
+                  isCurrentlyThinking
+                    ? 'text-deepseek-300 hover:bg-deepseek-500/10'
+                    : 'text-deepseek-400/80 hover:bg-deepseek-500/5'
+                }`}
               >
-                <Brain size={13} className="text-deepseek-400" />
-                <span>Reasoning Process</span>
-                {showThinking ? (
-                  <ChevronDown size={13} className="ml-auto" />
+                {isCurrentlyThinking ? (
+                  <Brain size={14} className="text-deepseek-400 animate-pulse" />
                 ) : (
-                  <ChevronRight size={13} className="ml-auto" />
+                  <Brain size={14} className="text-deepseek-400/60" />
+                )}
+                <span className="flex items-center gap-2">
+                  {isCurrentlyThinking ? (
+                    <>
+                      <span className="relative flex h-2 w-2">
+                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-deepseek-400 opacity-75" />
+                        <span className="relative inline-flex h-2 w-2 rounded-full bg-deepseek-400" />
+                      </span>
+                      <span>Thinking...</span>
+                    </>
+                  ) : (
+                    <span>Reasoning Process</span>
+                  )}
+                </span>
+                {showThinking ? (
+                  <ChevronDown size={14} className="ml-auto" />
+                ) : (
+                  <ChevronRight size={14} className="ml-auto" />
                 )}
               </button>
               {showThinking && (
-                <div className="border-t border-deepseek-500/10 px-3.5 py-3 text-xs leading-relaxed text-surface-400 max-h-80 overflow-y-auto">
-                  <ReactMarkdown
-                    remarkPlugins={[remarkMath]}
-                    rehypePlugins={[rehypeKatex]}
-                  >
-                    {thinking}
-                  </ReactMarkdown>
+                <div className={`border-t px-4 py-3.5 text-sm leading-relaxed max-h-96 overflow-y-auto ${
+                  isCurrentlyThinking 
+                    ? 'border-deepseek-500/20 text-surface-300 bg-deepseek-500/5' 
+                    : 'border-deepseek-500/10 text-surface-400'
+                }`}>
+                  <div className="space-y-2">
+                    <ReactMarkdown
+                      remarkPlugins={[remarkMath]}
+                      rehypePlugins={[rehypeKatex]}
+                      className="prose-thinking"
+                    >
+                      {thinking}
+                    </ReactMarkdown>
+                    {isCurrentlyThinking && (
+                      <div className="flex items-center gap-2 pt-2 text-xs text-deepseek-400/60">
+                        <Sparkles size={12} className="animate-pulse" />
+                        <span className="italic">Processing thoughts...</span>
+                      </div>
+                    )}
+                  </div>
+                  <div ref={thinkingEndRef} />
                 </div>
               )}
             </div>
           )}
 
-          {/* Main content */}
-          {displayContent && (
-            <div className="prose-chat text-surface-200">
-              <ReactMarkdown
-                remarkPlugins={[remarkMath]}
-                rehypePlugins={[rehypeKatex]}
-                components={{
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  code({ className, children, ...props }: any) {
-                    const match = /language-(\w+)/.exec(className || "");
-                    const isBlock =
-                      typeof children === "string" && children.includes("\n");
-                    if (isBlock || match) {
+          {/* Main Output - Clearly Separated */}
+          {hasOutput && (
+            <>
+              {thinking && (
+                <div className="flex items-center gap-2 pt-1 pb-1">
+                  <div className="h-px flex-1 bg-gradient-to-r from-transparent via-deepseek-500/20 to-transparent" />
+                  <span className="text-[10px] uppercase tracking-wider text-deepseek-400/40 flex items-center gap-1">
+                    <Zap size={10} />
+                    Response
+                  </span>
+                  <div className="h-px flex-1 bg-gradient-to-r from-transparent via-deepseek-500/20 to-transparent" />
+                </div>
+              )}
+              <div className="prose-chat text-surface-200">
+                <ReactMarkdown
+                  remarkPlugins={[remarkMath]}
+                  rehypePlugins={[rehypeKatex]}
+                  components={{
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    code({ className, children, ...props }: any) {
+                      const match = /language-(\w+)/.exec(className || "");
+                      const isBlock =
+                        typeof children === "string" && children.includes("\n");
+                      if (isBlock || match) {
+                        return (
+                          <div className="relative group/code">
+                            {match && (
+                              <div className="absolute right-3 top-2 text-[10px] text-surface-600 uppercase tracking-wider">
+                                {match[1]}
+                              </div>
+                            )}
+                            <pre className="!mt-0">
+                              <code className={className} {...props}>
+                                {children}
+                              </code>
+                            </pre>
+                          </div>
+                        );
+                      }
                       return (
-                        <div className="relative group/code">
-                          {match && (
-                            <div className="absolute right-3 top-2 text-[10px] text-surface-600 uppercase tracking-wider">
-                              {match[1]}
-                            </div>
-                          )}
-                          <pre className="!mt-0">
-                            <code className={className} {...props}>
-                              {children}
-                            </code>
-                          </pre>
-                        </div>
+                        <code className={className} {...props}>
+                          {children}
+                        </code>
                       );
-                    }
-                    return (
-                      <code className={className} {...props}>
-                        {children}
-                      </code>
-                    );
-                  },
-                }}
-              >
-                {displayContent}
-              </ReactMarkdown>
-            </div>
+                    },
+                  }}
+                >
+                  {displayContent}
+                </ReactMarkdown>
+              </div>
+            </>
           )}
 
           {/* Streaming cursor */}

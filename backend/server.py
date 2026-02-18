@@ -1,5 +1,5 @@
 """
-FastAPI Backend Server for DeepSeek-R1-Distill-Qwen-14B
+FastAPI Backend Server for Cortex Lab - DeepSeek-R1-1.5B
 Serves the model via REST API + Server-Sent Events (streaming)
 """
 
@@ -24,8 +24,8 @@ from pydantic import BaseModel, Field
 
 # ── Configuration ────────────────────────────────────────────────────────────
 
-MODEL_NAME = os.environ.get("MODEL_NAME", "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B")
-USE_4BIT   = os.environ.get("USE_4BIT", "true").lower() == "true"
+MODEL_NAME = os.environ.get("MODEL_NAME", "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B")
+USE_4BIT   = os.environ.get("USE_4BIT", "false").lower() == "true"  # Disabled for 1.5B model
 USE_8BIT   = os.environ.get("USE_8BIT", "false").lower() == "true"
 HOST       = os.environ.get("HOST", "0.0.0.0")
 PORT       = int(os.environ.get("PORT", "8000"))
@@ -44,7 +44,7 @@ async def lifespan(app: FastAPI):
     global model, tokenizer, model_loaded, model_info
 
     print("\n" + "=" * 64)
-    print("  DeepSeek-R1-Distill-Qwen-14B  ·  FastAPI Backend")
+    print("  Cortex Lab  ·  DeepSeek-R1-1.5B  ·  FastAPI Backend")
     print("=" * 64 + "\n")
 
     # ── Tokenizer ────────────────────────────────────────────────────────
@@ -64,16 +64,20 @@ async def lifespan(app: FastAPI):
     load_kwargs = {"trust_remote_code": True}
 
     if USE_4BIT:
-        print("[2/2] Loading model in 4-bit …")
+        print("[2/2] Loading model in 4-bit with CPU offloading …")
         load_kwargs["quantization_config"] = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_compute_dtype=torch.bfloat16,
             bnb_4bit_use_double_quant=True,
             bnb_4bit_quant_type="nf4",
         )
+        # Set max memory to leave some GPU memory free
+        max_memory = {0: "17GB", "cpu": "30GB"}
         load_kwargs["device_map"] = "auto"
+        load_kwargs["max_memory"] = max_memory
         load_kwargs["low_cpu_mem_usage"] = True
         load_kwargs["dtype"] = torch.bfloat16
+        load_kwargs["offload_folder"] = "offload"
     elif USE_8BIT:
         print("[2/2] Loading model in 8-bit …")
         load_kwargs["load_in_8bit"] = True
