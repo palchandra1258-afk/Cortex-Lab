@@ -5,7 +5,7 @@
     <a href="#-quick-start"><img src="https://img.shields.io/badge/Quick_Start-5_minutes-brightgreen?style=for-the-badge" alt="Quick Start"></a>
     <a href="#%EF%B8%8F-architecture"><img src="https://img.shields.io/badge/Architecture-9_Layers-blue?style=for-the-badge" alt="Architecture"></a>
     <a href="#-techniques"><img src="https://img.shields.io/badge/Research_Techniques-25%2B-orange?style=for-the-badge" alt="Techniques"></a>
-    <a href="#%EF%B8%8F-hardware"><img src="https://img.shields.io/badge/Min_GPU-GTX_1650_(4GB)-red?style=for-the-badge" alt="Hardware"></a>
+    <a href="#%EF%B8%8F-hardware"><img src="https://img.shields.io/badge/Min_GPU-RTX_4000_Ada_(20GB)-red?style=for-the-badge" alt="Hardware"></a>
   </p>
 </p>
 
@@ -160,7 +160,7 @@ Cortex Lab implements a **9-layer Agentic RAG architecture** synthesizing **25+ 
 
 | Component | Specification | Notes |
 |-----------|---------------|-------|
-| **GPU** | NVIDIA GTX 1650 (4GB VRAM) | All models fit in ~1.5GB VRAM |
+| **GPU** | NVIDIA RTX 4000 Ada Generation (20GB VRAM) | All models fit in ~1.5GB VRAM |
 | **CPU** | Intel i5 / AMD Ryzen 5 | Retrieval + embedding |
 | **RAM** | 8GB | System + model + data |
 | **Disk** | 20GB SSD | Models + memories + indices |
@@ -175,7 +175,7 @@ Cortex Lab implements a **9-layer Agentic RAG architecture** synthesizing **25+ 
 | SetFit + DistilBERT classifiers | ~50 MB |
 | FAISS indices + cache overhead | ~100 MB |
 | **Total** | **~1,500 MB** |
-| **Remaining headroom on GTX 1650** | **~2,500 MB free** |
+| **Remaining headroom on RTX 4000 Ada Generation** | **~18,500 MB free** |
 
 ---
 
@@ -204,7 +204,7 @@ source venv/bin/activate        # Linux/Mac
 pip install -r requirements.txt
 
 # 4. Download and quantize model
-python setup_model.py --4bit    # 4-bit quantized (recommended for GTX 1650)
+python setup_model.py --4bit    # 4-bit quantized (recommended for RTX 4000 Ada Generation)
 
 # 5. Start the backend
 cd backend
@@ -323,7 +323,7 @@ Cortex-Lab/
 | Quality Control | None | None | **Generate → Critique → Revise** loop with RAGChecker diagnostics |
 | Evolution | Static | Static | **Belief tracking**, contradiction detection, memory consolidation |
 | Privacy | Cloud API | Cloud/Local | **100% local**, zero data leakage |
-| Hardware | Cloud GPU | Cloud/Large GPU | **GTX 1650 (4GB VRAM)** consumer hardware |
+| Hardware | Cloud GPU | Cloud/Large GPU | **RTX 4000 Ada Generation (20GB VRAM)** consumer hardware |
 | Self-Improvement | None | None | **Continuous feedback**: auto-tunes retriever, caches, routing weights |
 
 ---

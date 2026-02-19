@@ -18,7 +18,7 @@ python inference.py --4bit
 ### Model Download
 ```bash
 python setup_model.py --4bit        # Recommended: ~8GB VRAM
-python setup_model.py --8bit        # Alternative: ~14GB VRAM  
+python setup_model.py --8bit        # Alternative: ~120GB VRAM  
 python setup_model.py               # Full precision: ~30GB VRAM
 ```
 

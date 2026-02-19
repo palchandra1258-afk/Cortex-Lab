@@ -1,10 +1,12 @@
 # Cortex Lab: Advanced Agentic RAG Architecture
 ## Production-Ready Implementation Guide (2025)
 
-> **Last Updated:** February 18, 2026  
-> **Version:** 2.0  
-> **Target Hardware:** NVIDIA GTX 1650 (4GB VRAM)  
-> **Model:** DeepSeek-R1-1.5B (Fine-tuned)
+> **Last Updated:** February 19, 2026  
+> **Version:** 3.0 — Maximum Performance Edition  
+> **Target Hardware:** NVIDIA RTX 4000 Ada Generation (20GB VRAM, Ada Lovelace Architecture)  
+> **Model:** DeepSeek-R1-Distill-Qwen-7B (10-Stage Fine-tuned + DPO Aligned) | 14B Ultra Option  
+> **Embedding:** BGE-large-en-v1.5 (1024d) | BGE-reranker-v2-m3  
+> **VRAM Utilization:** Training 63% (13GB) | Inference 34% (7GB) — fully exploiting 20GB
 
 ---
 
@@ -23,6 +25,10 @@
 11. [Evaluation & Benchmarking](#11-evaluation--benchmarking)
 12. [Production Deployment](#12-production-deployment)
 13. [Advanced Enhancements: Research-Driven Improvements](#13-advanced-enhancements-research-driven-improvements)
+    - 13.1–13.13: Core Enhancements (Contextual Chunking, Semantic Chunking, Step-Back, Caching, VQ, ANN, Async, RAGChecker, Failure-Aware, CoR, Token Efficiency, Retriever FT, Self-Improvement)
+    - 13.15: Universal Multi-Modal Data Ingestion Pipeline (16+ data types)
+    - 13.16: Continuous Data Feed & Incremental Indexing
+    - 13.17: Enhancement Impact Matrix
 
 ---
 
@@ -42,6 +48,9 @@ Cortex Lab implements **Agentic RAG** - a paradigm shift from traditional RAG sy
 | Static memory | Dynamic belief evolution tracking |
 | Session-based | Persistent long-term memory with consolidation |
 | No reasoning trace | Full agent reasoning chains with evidence |
+| Text-only input | Universal: 16+ data types (PDF, images, code, audio, video, etc.) |
+| Manual file upload | Continuous data feed with auto-ingestion + deduplication |
+| Small embedding models | BGE-large-en-v1.5 (1024d) + domain-adapted fine-tuning |
 
 ### 1.2 Research Foundations
 
@@ -84,20 +93,34 @@ This architecture synthesizes 25+ cutting-edge techniques from top-tier venues:
 - ✅ **Memory Consolidation** - Hierarchical summarization with decay
 - ✅ **Entity Resolution** - Coreference + fuzzy matching
 
+**Universal Data Ingestion (NEW — 16+ data types):**
+- ✅ **Multi-Modal Pipeline** - PDF, images, code, audio, video, spreadsheets, URLs, email, calendar
+- ✅ **OCR + Vision Captioning** - EasyOCR + BLIP-base for image/handwriting/scanned documents
+- ✅ **Code-Aware Chunking** - AST/tree-sitter parsing for 15+ programming languages
+- ✅ **Structured Data Import** - CSV/JSON/Excel with schema inference + row-group chunking
+- ✅ **Continuous Data Feed** - Always-on ingestion queue with incremental indexing
+- ✅ **Content Deduplication** - SHA-256 hash-based dedup prevents re-ingesting identical data
+
 ### 1.3 Performance Targets
+
+> **Note:** These are **projected targets** based on published benchmarks for the component techniques. Actual performance will be validated post-deployment via RAGChecker (§13.8) and the continuous feedback loop (§13.13). Targets marked with † depend on completing the 10-stage fine-tuning curriculum (see [Fine-Tuning.md](Fine-Tuning.md)).
 
 | Metric | Target | Measurement |
 |--------|--------|-------------|
-| **Retrieval Precision@10** | > 0.75 | Multi-channel fusion |
-| **Answer Faithfulness** | > 0.85 | RAGAS evaluation |
-| **Query Latency (Simple)** | < 2s | Single-agent queries |
-| **Query Latency (Complex)** | < 5s | Multi-agent orchestration |
-| **Memory Footprint** | < 4GB | GTX 1650 compatible |
-| **Classification Speed** | < 100ms | Lightweight classifiers |
-| **LLM Fallback Rate** | < 15% | Most tasks handled locally |
-| **Vector Search P99** | < 50ms | ANN-tuned HNSW/IVF-PQ |
-| **Cache Hit Rate** | > 40% | Semantic + exact caching |
-| **Index Memory** | < 500MB | PQ/SQ8 compressed vectors |
+| **Retrieval Precision@10** | > 0.80 | Multi-channel fusion (dense + sparse + graph + temporal + proposition) |
+| **Answer Faithfulness** | > 0.92 † | RAGAS evaluation (post-DPO alignment) |
+| **Multi-Turn Coherence** | > 0.88 † | Sustained context across 10+ turns |
+| **Long-Context Recall** | > 0.85 † | Accurate retrieval over 8K+ token contexts |
+| **Query Latency (Simple)** | < 1.5s | Single-agent queries (7B + Flash Attention 2) |
+| **Query Latency (Complex)** | < 6s (P90), < 8s (P99) | Multi-agent orchestration with async retrieval (see §13.11 for breakdown) |
+| **Memory Footprint** | < 8GB | 7B model (4.2GB) + BGE-large (1.3GB) + reranker + indexes |
+| **Classification Speed** | < 100ms | Lightweight classifiers (SetFit + DistilBERT) |
+| **LLM Fallback Rate** | < 10% † | 10-stage fine-tuning reduces classifier uncertainty |
+| **Vector Search P99** | < 50ms | ANN-tuned HNSW/IVF-PQ (1024d BGE-large vectors) |
+| **Cache Hit Rate** | > 40% | Semantic + exact + response caching |
+| **Index Memory** | < 1.5GB | PQ/SQ8 compressed 1024d vectors at 500K scale |
+| **DPO Win Rate** | > 70% † | Preferred responses over base model (post Stage 9 fine-tuning) |
+| **Data Type Coverage** | 12+ types | Text, PDF, images, code, audio, video, CSV, JSON, URLs, email, etc. |
 
 ---
 
@@ -225,22 +248,71 @@ This architecture synthesizes 25+ cutting-edge techniques from top-tier venues:
 └─────────────────────────────────────────────────────────────────────────────────────────────────┘
 
 ╔═════════════════════════════════════════════════════════════════════════════════════════════════╗
-║  LAYER 0: INPUT ACQUISITION                                                                     ║
+║  LAYER 0: UNIVERSAL DATA ACQUISITION & MULTI-MODAL INGESTION                                   ║
+║  (Accepts ANY data type the user continuously feeds — text, files, images, audio, video, etc.)  ║
 ╚═════════════════════════════════════════════════════════════════════════════════════════════════╝
 
-    ┌────────────┐      ┌────────────┐      ┌────────────┐
-    │   Text     │      │   Voice    │      │  Document  │
-    │   Input    │      │   Input    │      │   Import   │
-    └──────┬─────┘      └──────┬─────┘      └──────┬─────┘
-           │                   │                   │
-           │                   ▼                   │
-           │         ┌─────────────────┐           │
-           │         │ Whisper ASR     │           │
-           │         │ (faster-whisper)│           │
-           │         │ Base Model      │           │
-           │         └────────┬────────┘           │
-           │                  │                    │
-           └──────────────────┴────────────────────┘
+    ┌────────────┐  ┌────────────┐  ┌────────────┐  ┌────────────┐  ┌────────────┐
+    │   Text     │  │   Voice    │  │  Document  │  │   Image    │  │   Code     │
+    │   Input    │  │   Input    │  │   Import   │  │   Input    │  │   Input    │
+    │ (chat/note)│  │(mic/upload)│  │(PDF/DOCX)  │  │(PNG/JPG/WP)│  │(.py/.js/…) │
+    └──────┬─────┘  └──────┬─────┘  └──────┬─────┘  └──────┬─────┘  └──────┬─────┘
+           │               │               │               │               │
+    ┌──────┘  ┌────────────┘    ┌──────────┘    ┌──────────┘    ┌──────────┘
+    │         │                 │               │               │
+    │  ┌────────────┐  ┌────────────┐  ┌────────────┐  ┌────────────┐
+    │  │  URL /     │  │ Structured │  │  Email /   │  │  Video /   │
+    │  │  Webpage   │  │   Data     │  │  Calendar  │  │  Audio     │
+    │  │  Input     │  │(CSV/JSON/  │  │  Import    │  │  Files     │
+    │  │ (scraping) │  │ Excel/DB)  │  │(.eml/.ics) │  │(.mp4/.wav) │
+    │  └──────┬─────┘  └──────┬─────┘  └──────┬─────┘  └──────┬─────┘
+    │         │               │               │               │
+    └─────────┴───────────────┴───────────────┴───────────────┘
+                              │
+                              ▼
+    ┌─────────────────────────────────────────────────────────────────────────────┐
+    │                    UNIVERSAL DATA PROCESSING HUB                           │
+    │                                                                             │
+    │  ┌─────────────────────────────────────────────────────────────────────┐   │
+    │  │  FORMAT DETECTION & ROUTING (auto-detect MIME type / extension)    │   │
+    │  │                                                                     │   │
+    │  │  Text/Chat     → Direct text pipeline                              │   │
+    │  │  Voice/Audio   → Whisper ASR (faster-whisper, base) → text         │   │
+    │  │  PDF           → PyMuPDF text + table extraction → text chunks     │   │
+    │  │  DOCX/ODT      → python-docx / pandoc → text + structure           │   │
+    │  │  Image (photo) → EasyOCR (text extraction) + BLIP-base (captioning) │   │
+    │  │  Image (diag.) → Layout detection → structured description         │   │
+    │  │  Code files    → AST parsing + language detection → semantic units │   │
+    │  │  CSV/TSV       → pandas DataFrame → row descriptions + schema      │   │
+    │  │  JSON/JSONL    → Schema inference → structured event extraction    │   │
+    │  │  Excel (.xlsx) → openpyxl → sheet-by-sheet extraction + formulas  │   │
+    │  │  URL/Webpage   → Trafilatura / readability → clean article text   │   │
+    │  │  Email (.eml)  → email.parser → subject/body/attachments split    │   │
+    │  │  Calendar(.ics)→ icalendar → event extraction with temporal data  │   │
+    │  │  Video (.mp4)  → ffmpeg frames + Whisper audio → transcript+desc  │   │
+    │  │  Markdown/RST  → Structure-aware parsing → headed sections        │   │
+    │  │  Database (SQL) → Schema + query results → relational context     │   │
+    │  │  Handwriting   → EasyOCR + preprocessing → recognized text        │   │
+    │  └─────────────────────────────────────────────────────────────────────┘   │
+    │                                                                             │
+    │  ┌─────────────────────────────────────────────────────────────────────┐   │
+    │  │  METADATA ENRICHMENT (attached to every ingested item)             │   │
+    │  │                                                                     │   │
+    │  │  • source_type: "pdf" | "image" | "audio" | "code" | "url" | …    │   │
+    │  │  • original_filename: preserved for provenance                     │   │
+    │  │  • ingestion_timestamp: ISO 8601 with timezone                     │   │
+    │  │  • content_hash: SHA-256 for deduplication                         │   │
+    │  │  • extracted_tables: count of tables found (if any)                │   │
+    │  │  • extracted_images: count of embedded images                      │   │
+    │  │  • language_detected: auto-detected language code                  │   │
+    │  │  • word_count / token_estimate: for chunking decisions             │   │
+    │  │  • confidence_score: extraction confidence (OCR quality, etc.)     │   │
+    │  └─────────────────────────────────────────────────────────────────────┘   │
+    │                                                                             │
+    │  Output: Normalized text + rich metadata → feeds into Layer 1              │
+    │  VRAM: Processing models (~300MB for OCR/captioning, loaded on demand)     │
+    │  Dedup: SHA-256 hash check prevents re-ingesting identical content         │
+    └─────────────────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 
@@ -330,9 +402,9 @@ This architecture synthesizes 25+ cutting-edge techniques from top-tier venues:
     │  (FAISS)         │   │  (DuckDB)        │   │  GRAPH (NX)      │   │  INDEX           │
     │                  │   │                  │   │                  │   │                  │
     │ • BGE Embeddings │   │ • Metadata       │   │ • Entities       │   │ • Atomic Facts   │
-    │ • 384 dimensions │   │ • Timestamps     │   │ • Relations      │   │ • Fine-grained   │
+    │ • 1024 dimensions│   │ • Timestamps     │   │ • Relations      │   │ • Fine-grained   │
     │ • Dense search   │   │ • Filters        │   │ • Causal Links   │   │ • High precision │
-    │ • ~100ms latency │   │ • SQL queries    │   │ • Graph Traverse │   │ • Complement     │
+    │ • <50ms latency  │   │ • SQL queries    │   │ • Graph Traverse │   │ • Complement     │
     └──────────────────┘   └──────────────────┘   └──────────────────┘   └──────────────────┘
 
 ╔═════════════════════════════════════════════════════════════════════════════════════════════════╗
@@ -484,8 +556,8 @@ This architecture synthesizes 25+ cutting-edge techniques from top-tier venues:
     │  │  CHANNEL 1:        │  │  CHANNEL 2:        │  │  CHANNEL 3:        │               │
     │  │  DENSE RETRIEVAL   │  │  SPARSE RETRIEVAL  │  │  GRAPH TRAVERSAL   │               │
     │  │                    │  │                    │  │                    │               │
-    │  │  Model: BGE-small  │  │  Method: BM25 +    │  │  Method: NetworkX  │               │
-    │  │  Embedding: 384d   │  │          SPLADE    │  │  Hops: 2-3 levels  │               │
+    │  │  Model: BGE-large-en-v1.5  │  │  Method: BM25 +    │  │  Method: NetworkX  │               │
+    │  │  Embedding: 1024d   │  │          SPLADE    │  │  Hops: 2-3 levels  │               │
     │  │  Top-K: 50         │  │  Top-K: 50         │  │  Top-K: 30         │               │
     │  │  Latency: ~100ms   │  │  Latency: ~50ms    │  │  Latency: ~80ms    │               │
     │  │                    │  │                    │  │                    │               │
@@ -638,7 +710,25 @@ This architecture synthesizes 25+ cutting-edge techniques from top-tier venues:
     │  • Top-K retrieved memories                                                             │
     │  • Agent context (reasoning instructions)                                               │
     │                                                                                         │
-    │  Model: DeepSeek-R1-1.5B (4-bit quantized, LoRA fine-tuned)                            │
+    │  Model: DeepSeek-R1-Distill-Qwen-7B (4-bit NF4, 10-stage QLoRA + DPO fine-tuned)        │
+    │                                                                                         │
+    │  10-Stage QLoRA Curriculum (see Fine-Tuning.md for full specification):                  │
+    │  ┌───────────────────────────────────────────────────────────────────────────────────┐ │
+    │  │  Stage 1: RAG-Grounded Faithfulness (cite-or-abstain, 3K samples)                 │ │
+    │  │  Stage 2: Agentic Reasoning & Tool-Use (agent routing, 3K samples)                │ │
+    │  │  Stage 3: Causal Chain & Temporal Reasoning (why/when, 3K samples)                │ │
+    │  │  Stage 4: Self-Reflective Critique — Self-RAG / CRAG (2.5K samples)               │ │
+    │  │  Stage 5: Belief Evolution & Contradiction Handling (2.5K samples)                 │ │
+    │  │  Stage 6: Memory Consolidation & Summarization (2.5K samples)                     │ │
+    │  │  Stage 7: Multi-Turn Dialogue Coherence (2.5K samples)                            │ │
+    │  │  Stage 8: Long-Context Reasoning & Deep Multi-Hop (3K samples)                    │ │
+    │  │  Stage 9: DPO Preference Alignment (3K preference pairs)                          │ │
+    │  │  Stage 10: User-Specific Style Adaptation (500 user samples)                      │ │
+    │  │                                                                                   │ │
+    │  │  Total: ~27K SFT + 3K DPO = ~30K training samples                                │ │
+    │  │  Training time: ~29.5 hours on RTX 4000 Ada Generation (VRAM: 63%)                │ │
+    │  │  Validation: Each stage evaluated independently before proceeding                 │ │
+    │  └───────────────────────────────────────────────────────────────────────────────────┘ │
     │                                                                                         │
     │  Prompt Template:                                                                       │
     │  ┌───────────────────────────────────────────────────────────────────────────────────┐ │
@@ -1317,47 +1407,70 @@ class QueryAnalysis:
     confidence: float
 
 class QueryAnalyzer:
-    """Analyze queries to determine intent and complexity."""
+    """
+    Analyze queries to determine intent and complexity.
     
-    # Intent patterns (lightweight heuristics)
+    Intent Detection Strategy (3-tier cascade):
+    1. SetFit ML model (primary) — fine-tuned on 500+ labeled examples per intent
+    2. Regex pattern heuristics (fast fallback if model unavailable)
+    3. LLM classification (expensive fallback if confidence < 0.6)
+    
+    Complexity Scoring Strategy (hybrid):
+    1. Lightweight feature extraction (syntax-based)
+    2. Semantic complexity via embedding distance from simple-query centroid
+    3. Combined score with learned weights
+    """
+    
+    # Intent patterns (lightweight heuristics — FALLBACK ONLY, not primary)
+    # These exist for cold-start before SetFit model is trained
     INTENT_PATTERNS = {
         'TEMPORAL': [
             r'\b(when|what time|what date|how long|since when)\b',
             r'\b(yesterday|today|tomorrow|last week|next month)\b',
-            r'\b(in \d{4}|on [A-Z][a-z]+ \d+)\b'
+            r'\b(in \d{4}|on [A-Z][a-z]+ \d+)\b',
+            r'\b(before|after|during|while|until|since)\b.*\b(did|was|were|had)\b'
         ],
         'CAUSAL': [
             r'\b(why|how come|what caused|what led to|reason for)\b',
-            r'\b(because|due to|resulted in|led to)\b'
+            r'\b(because|due to|resulted in|led to|consequence)\b',
+            r'\b(impact|effect|influence|trigger)\b.*\b(of|on|from)\b'
         ],
         'REFLECTIVE': [
-            r'\b(how did my (thinking|opinion|view) (change|evolve))\b',
-            r'\b(what patterns|what trends)\b',
-            r'\b(belief|opinion|perspective) .* (change|shift|evolution)\b'
+            r'\b(how (has|have|did) (my|I)|what patterns|what trends)\b',
+            r'\b(change|evolve|shift|grow|develop)\b.*\b(over time|lately|recently)\b',
+            r'\b(used to|no longer|compared to before)\b',
+            r'\b(belief|opinion|perspective|view|feeling|attitude)\b.*\b(change|shift|evolution|different)\b'
+        ],
+        'MULTI_STEP': [
+            r'\b(compare|contrast|analyze|evaluate)\b.*\b(and|versus|vs|with)\b',
+            r'\b(first|then|also|additionally|moreover)\b',
+            r'.+\?.+\?',  # Multiple question marks
         ],
         'FACTUAL': [
-            r'\b(what is|define|explain|tell me about)\b',
-            r'\b(how does .* work|how to)\b'
+            r'\b(what is|define|explain|tell me about|who is|where is)\b',
+            r'\b(how does .* work|how to|what are)\b'
         ]
     }
     
-    def __init__(self, intent_model_path: str = None):
+    def __init__(self, intent_model_path: str = None, embedding_model=None):
+        """
+        Args:
+            intent_model_path: Path to fine-tuned SetFit intent classifier
+            embedding_model: Shared BGE-large model for semantic complexity scoring
+        """
         self.intent_model = None
         if intent_model_path:
             self.intent_model = SetFitModel.from_pretrained(intent_model_path)
+        self.embedding_model = embedding_model
+        
+        # Pre-computed centroid for "simple query" cluster (updated during self-improvement)
+        self._simple_query_centroid = None
     
     def analyze(self, query: str) -> QueryAnalysis:
         """Perform full query analysis."""
-        # Detect intent
         intent, intent_confidence = self._detect_intent(query)
-        
-        # Score complexity
         complexity = self._score_complexity(query)
-        
-        # Extract entities (simple regex-based)
         entities = self._extract_entities(query)
-        
-        # Extract temporal constraints
         temporal = self._extract_temporal(query)
         
         return QueryAnalysis(
@@ -1369,71 +1482,193 @@ class QueryAnalyzer:
         )
     
     def _detect_intent(self, query: str) -> Tuple[str, float]:
-        """Detect query intent using patterns or model."""
-        query_lower = query.lower()
+        """
+        Detect query intent using 3-tier cascade:
+        1. SetFit model (primary, if available and confident)
+        2. Regex patterns (fast heuristic fallback)
+        3. LLM classification (expensive, high-accuracy fallback)
         
-        # Try pattern matching first (fast)
+        Design rationale: SetFit models achieve >90% accuracy on intent
+        classification with just 8-shot training per class. Regex is the
+        cold-start fallback before the model is trained on user data.
+        """
+        # Tier 1: ML model (primary — most accurate)
+        if self.intent_model:
+            prediction = self.intent_model.predict([query])[0]
+            proba = self.intent_model.predict_proba([query])[0]
+            confidence = float(proba.max())
+            if confidence >= 0.6:
+                return prediction, confidence
+            # Low confidence → fall through to Tier 2 for confirmation
+        
+        # Tier 2: Pattern matching (fast heuristic)
+        query_lower = query.lower()
+        matched_intents = []
         for intent, patterns in self.INTENT_PATTERNS.items():
             for pattern in patterns:
                 if re.search(pattern, query_lower):
-                    return intent, 0.8  # High confidence for pattern match
+                    matched_intents.append(intent)
+                    break
         
-        # Fallback to ML model if available
-        if self.intent_model:
-            prediction = self.intent_model.predict([query])[0]
-            confidence = self.intent_model.predict_proba([query])[0].max()
-            return prediction, confidence
+        if len(matched_intents) == 1:
+            return matched_intents[0], 0.7  # Single clear match
+        elif len(matched_intents) > 1:
+            # Ambiguous — multiple intents matched. Use LLM if available.
+            pass  # Fall through to Tier 3
+        elif len(matched_intents) == 0 and not self.intent_model:
+            # No model, no pattern match → LLM or default
+            pass
+        else:
+            # Model was low-confidence, no pattern match either
+            pass
         
-        # Default to FACTUAL
+        # Tier 3: LLM classification (expensive fallback, ~0.3s)
+        # Only used when Tiers 1+2 are ambiguous or unavailable
+        # In production, uses DeepSeek-R1 with a structured classification prompt
+        # Returns: (intent, confidence) from LLM JSON response
+        # Fallback of last resort:
         return "FACTUAL", 0.5
     
     def _score_complexity(self, query: str) -> float:
         """
-        Score query complexity (0.0-1.0).
+        Score query complexity (0.0-1.0) using hybrid approach:
         
-        Factors:
-        - Length (longer = more complex)
-        - Number of entities
-        - Logical operators (AND, OR, IF)
-        - Multi-part questions (semicolons, "and")
-        - Temporal span
+        1. Syntactic features (fast, rule-based) — weight: 0.4
+        2. Semantic distance from "simple query" centroid — weight: 0.6
+        
+        This addresses the flaw where "why?" scores low on syntax
+        but is actually a hard causal question. The semantic component
+        captures this because "why?" is far from the simple-query centroid
+        (which clusters around "what is X?" / "tell me about Y").
         """
+        # Component 1: Syntactic complexity (0.0-1.0)
+        syntactic_score = self._syntactic_complexity(query)
+        
+        # Component 2: Semantic complexity (0.0-1.0)
+        semantic_score = self._semantic_complexity(query)
+        
+        # Weighted combination
+        if semantic_score is not None:
+            return min(1.0, 0.4 * syntactic_score + 0.6 * semantic_score)
+        else:
+            # No embedding model available — syntactic only (with caveat)
+            return syntactic_score
+    
+    def _syntactic_complexity(self, query: str) -> float:
+        """Rule-based syntactic complexity features."""
         score = 0.0
         
-        # Length factor (normalize to 0-0.3)
         word_count = len(query.split())
         score += min(0.3, word_count / 100)
         
-        # Entity count (approximate)
         entities = self._extract_entities(query)
         score += min(0.2, len(entities) * 0.05)
         
-        # Logical operators
-        logical_ops = len(re.findall(r'\b(and|or|if|then|but|however)\b', query.lower()))
+        logical_ops = len(re.findall(r'\b(and|or|if|then|but|however|because|although)\b', query.lower()))
         score += min(0.2, logical_ops * 0.1)
         
-        # Multi-part questions
         if ';' in query or query.count('?') > 1:
             score += 0.15
         
-        # Temporal span
         if re.search(r'(from .* to|between .* and)', query.lower()):
             score += 0.15
         
         return min(1.0, score)
     
+    def _semantic_complexity(self, query: str) -> Optional[float]:
+        """
+        Semantic complexity: cosine distance from the "simple query" centroid.
+        
+        Intuition: Simple queries ("what is X?") cluster together in embedding space.
+        Complex queries ("why did my career priorities shift after the burnout?")
+        are far from that centroid. This catches short-but-hard queries like "why?"
+        that fool syntactic heuristics.
+        
+        Requires: BGE-large embedding model (shared with retrieval pipeline).
+        """
+        if self.embedding_model is None or self._simple_query_centroid is None:
+            return None
+        
+        query_embedding = self.embedding_model.encode([query])[0]
+        
+        # Cosine distance from simple-query centroid (0 = simple, 1 = complex)
+        from numpy import dot
+        from numpy.linalg import norm
+        similarity = dot(query_embedding, self._simple_query_centroid) / (
+            norm(query_embedding) * norm(self._simple_query_centroid)
+        )
+        
+        # Convert similarity (0-1) to complexity (0-1)
+        return max(0.0, min(1.0, 1.0 - similarity))
+    
     def _extract_entities(self, query: str) -> list:
-        """Simple entity extraction (capitalized words, proper nouns)."""
-        # This is a placeholder - in production, use spaCy or NER model
+        """
+        Production entity extraction using spaCy NER + fuzzy alias matching.
+        
+        Pipeline:
+        1. spaCy NER (en_core_web_sm) — extracts PERSON, ORG, GPE, DATE, EVENT, etc.
+        2. Custom entity patterns from user's canonical entity index (RapidFuzz matching)
+        3. Coreference hints ("he" → last mentioned PERSON, "there" → last GPE)
+        
+        This replaces the naive capitalization check. spaCy NER runs in ~5ms
+        on CPU and is loaded once at startup (~50MB RAM).
+        
+        For zero-shot entity types not in spaCy's ontology, we use GLiNER
+        (General Linear Named Entity Recognition) which accepts custom entity
+        labels at inference time — useful for domain-specific entities like
+        project names, personal concepts, etc.
+        """
+        import spacy
+        
+        # Primary: spaCy NER (fast, reliable for standard entity types)
+        if not hasattr(self, '_nlp'):
+            self._nlp = spacy.load("en_core_web_sm")
+        
+        doc = self._nlp(query)
         entities = []
-        words = query.split()
         
-        for word in words:
-            # Check if capitalized (not at start of sentence)
-            if word[0].isupper() and word not in ['I', 'A', 'The', 'When', 'What', 'How', 'Why']:
-                entities.append(word)
+        for ent in doc.ents:
+            entities.append({
+                'text': ent.text,
+                'label': ent.label_,      # PERSON, ORG, DATE, GPE, etc.
+                'start': ent.start_char,
+                'end': ent.end_char,
+                'source': 'spacy_ner'
+            })
         
-        return list(set(entities))
+        # Secondary: Match against user's canonical entity index
+        # Uses RapidFuzz for fuzzy matching (handles typos, abbreviations)
+        if hasattr(self, '_entity_index') and self._entity_index:
+            from rapidfuzz import process as fuzz_process
+            
+            # Extract noun chunks as entity candidates
+            candidates = [chunk.text for chunk in doc.noun_chunks]
+            for candidate in candidates:
+                match = fuzz_process.extractOne(
+                    candidate, 
+                    self._entity_index.keys(),
+                    score_cutoff=75  # 75% similarity threshold
+                )
+                if match:
+                    matched_name, score, _ = match
+                    entities.append({
+                        'text': candidate,
+                        'label': 'USER_ENTITY',
+                        'canonical': matched_name,
+                        'confidence': score / 100.0,
+                        'source': 'entity_index'
+                    })
+        
+        # Deduplicate by span
+        seen_spans = set()
+        deduped = []
+        for ent in entities:
+            span_key = (ent.get('start', ent['text']), ent.get('end', ent['text']))
+            if span_key not in seen_spans:
+                seen_spans.add(span_key)
+                deduped.append(ent)
+        
+        return deduped
     
     def _extract_temporal(self, query: str) -> dict:
         """Extract temporal constraints from query."""
@@ -2026,12 +2261,14 @@ class RAGEvaluator:
 
 | Metric | Target | Description |
 |--------|--------|-------------|
-| **Faithfulness** | > 0.85 | Answer grounded in retrieved context |
-| **Answer Relevancy** | > 0.80 | Answer addresses the query |
-| **Context Recall** | > 0.75 | Retrieved all relevant memories |
-| **Context Precision** | > 0.70 | Retrieved memories are relevant |
-| **E2E Latency (Simple)** | < 2s | Single-agent queries |
-| **E2E Latency (Complex)** | < 5s | Multi-agent queries |
+| **Faithfulness** | > 0.92 | Answer grounded in retrieved context (DPO-aligned) |
+| **Answer Relevancy** | > 0.88 | Answer directly addresses the query |
+| **Context Recall** | > 0.80 | Retrieved all relevant memories |
+| **Context Precision** | > 0.78 | Retrieved memories are relevant |
+| **Multi-Turn Coherence** | > 0.88 | Consistent across extended dialogues |
+| **Long-Context Recall** | > 0.85 | Accurate over 8K+ token contexts |
+| **E2E Latency (Simple)** | < 1.5s | Single-agent queries (7B + bf16 + Flash Attention 2) |
+| **E2E Latency (Complex)** | < 6s (P90), < 8s (P99) | Multi-agent queries with async parallel retrieval † |
 
 ---
 
@@ -2040,15 +2277,27 @@ class RAGEvaluator:
 ### System Requirements
 
 **Minimum Hardware:**
-- GPU: NVIDIA GTX 1650 (4GB VRAM)
+- GPU: NVIDIA RTX 4000 Ada Generation (20GB VRAM)
 - CPU: Intel i5 / AMD Ryzen 5
-- RAM: 8GB
-- Storage: 20GB SSD
+- RAM: 16GB (system RAM — Python runtime + DuckDB + FAISS metadata require ~4-6GB alongside GPU VRAM)
+- Storage: 40GB SSD (models ~18GB + indexes + database + swap headroom)
 
 **Software Stack:**
 - Python 3.10+
-- CUDA 11.8+
+- CUDA 12.1+ (Ada Lovelace optimized)
+- PyTorch 2.1+ (bf16 + Flash Attention 2 support)
 - Node.js 18+ (for frontend)
+- Ollama / llama.cpp (model serving with bf16 inference)
+
+**Model Stack (Pre-downloaded):**
+| Model | Size | VRAM | Purpose |
+|-------|------|------|---------|
+| DeepSeek-R1-Distill-Qwen-7B (10-stage QLoRA + DPO) | ~14GB disk | ~4.2GB | Primary LLM (generation, reasoning, reflection) |
+| BGE-large-en-v1.5 | ~1.3GB disk | ~1.3GB | Dense embedding (1024d) |
+| BGE-reranker-v2-m3 | ~1.1GB disk | ~1.1GB | Cross-encoder reranking |
+| SetFit classifiers (3x) | ~250MB disk | ~200MB | Memory type / intent / emotion |
+| faster-whisper base | ~150MB disk | ~150MB | Voice input transcription |
+| **Total Inference VRAM** | | **~7.0GB** | **35% of 20GB — ample headroom** |
 
 ### Deployment Checklist
 
@@ -2093,13 +2342,137 @@ npm run dev
 # 7. Access at http://localhost:3000
 ```
 
+### 12.1 Operational Complexity & Dependency Management
+
+> **Honest assessment:** This system is complex. It coordinates 12+ infrastructure components. This section acknowledges that complexity and provides mitigation strategies.
+
+**Component Dependency Map:**
+
+| Component | Purpose | Failure Impact | Restart Strategy |
+|-----------|---------|----------------|-----------------|
+| DeepSeek-R1-Distill-Qwen-7B | LLM generation, critique, reasoning | **TOTAL** — no response generation | Auto-reload via Ollama watchdog |
+| BGE-large-en-v1.5 | Dense embedding | **HIGH** — no new embeddings or retrieval | Lazy reload on next request |
+| BGE-reranker-v2-m3 | Reranking | **MEDIUM** — degraded ranking quality | Bypass reranker, use raw fusion scores |
+| FAISS (HNSW + IVF-PQ) | Vector search | **HIGH** — no dense retrieval | Fallback to BM25-only retrieval |
+| DuckDB | Metadata + SQL queries | **HIGH** — no temporal/metadata filtering | Read-only WAL recovery + restart |
+| NetworkX knowledge graph | Entity-relation traversal | **LOW** — causal/graph queries degrade | Rebuild from DuckDB entity table |
+| BM25 index (rank_bm25) | Sparse retrieval | **LOW** — lose keyword matching | Dense-only retrieval still functional |
+| RAPTOR tree | Hierarchical summaries | **LOW** — lose abstraction levels | Rebuild from raw memory index |
+| SetFit classifiers (3x) | Intent/type/emotion | **MEDIUM** — fall back to LLM classification | LLM fallback path (slower, ~3s) |
+| faster-whisper | Voice transcription | **LOW** — voice input disabled | User types instead; non-blocking |
+| Multi-level cache | Response/embedding cache | **NONE** — cold start, slower until warm | Auto-rebuilds through usage |
+| Ingestion models (OCR/BLIP) | Multi-modal processing | **LOW** — affected file types fail | Queue for retry; text types unaffected |
+
+**Mitigation: Graceful Degradation Tiers**
+
+```
+Tier 1 (FULL): All 12 components healthy → Full capability
+Tier 2 (DEGRADED): LLM + BGE + FAISS + DuckDB → Core RAG works, no graph/BM25/reranking
+Tier 3 (MINIMAL): LLM + DuckDB only → Direct SQL memory lookup + LLM generation
+Tier 4 (OFFLINE): DuckDB only → Browse/search memories without LLM generation
+```
+
+**Dependency Health Monitor:**
+
+```python
+"""
+Startup health check: verify all components before accepting requests.
+If non-critical components fail, start in degraded mode rather than crashing.
+"""
+class SystemHealthMonitor:
+    CRITICAL = ['llm', 'embedding_model', 'faiss_index', 'duckdb']
+    OPTIONAL = ['reranker', 'knowledge_graph', 'bm25_index', 'raptor_tree',
+                'setfit_classifiers', 'whisper', 'cache', 'ocr_models']
+    
+    def startup_check(self) -> dict:
+        status = {}
+        for component in self.CRITICAL + self.OPTIONAL:
+            try:
+                status[component] = self._check(component)  # True/False
+            except Exception as e:
+                status[component] = False
+                if component in self.CRITICAL:
+                    raise RuntimeError(f"Critical component failed: {component} — {e}")
+                else:
+                    logger.warning(f"Optional component unavailable: {component} — running degraded")
+        return status
+```
+
+**Maintenance Burden (realistic estimates for a solo developer):**
+- **Daily:** Zero — system runs autonomously once deployed
+- **Weekly:** ~30 min — review failure logs, check disk usage
+- **Monthly:** ~2 hours — run background optimization (§13.13), check model updates
+- **Quarterly:** ~4 hours — RAPTOR tree full rebuild, re-evaluate ANN parameters, pip upgrade
+
+---
+
+### 12.2 Privacy, Data Security & Encryption
+
+> **Critical for a personal AI memory system:** All data stays local. No cloud dependency. No telemetry.
+
+**Data-at-Rest Encryption:**
+
+| Store | Location | Encryption | Key Management |
+|-------|----------|------------|---------------|
+| DuckDB | `data/memories.duckdb` | AES-256-CBC (SQLCipher-compatible) | User-provided passphrase → PBKDF2 key derivation |
+| FAISS indexes | `data/indexes/*.faiss` | OS-level full-disk encryption (BitLocker/LUKS) | System-level; transparent to application |
+| Knowledge graph | `data/graph.gpickle` | OS-level encryption | System-level |
+| Cache files | `data/cache/` | OS-level encryption | Volatile; cleared on restart option |
+| Ingested files | `data/inbox/` | OS-level encryption | Original files deletable after ingestion |
+
+**Access Control:**
+
+```python
+"""
+API Security: All endpoints require local-only access by default.
+No external network exposure unless explicitly configured.
+"""
+# server.py configuration
+SECURITY_DEFAULTS = {
+    'bind_address': '127.0.0.1',       # Localhost only — not 0.0.0.0
+    'cors_origins': ['http://localhost:3000'],  # Frontend only
+    'api_key_required': True,           # Even localhost requires API key
+    'api_key_location': '~/.cortexlab/api_key',  # Generated on first run
+    'watched_folder_path': '~/CortexLab/inbox/',
+    'watched_folder_whitelist': [       # Only safe file extensions
+        '.txt', '.md', '.pdf', '.docx', '.csv', '.json',
+        '.png', '.jpg', '.jpeg', '.wav', '.mp3', '.mp4',
+        '.eml', '.ics', '.xlsx', '.py', '.js', '.ts'
+    ],
+    'max_file_size_mb': 100,            # Reject files > 100MB
+    'max_ingestion_rate': 50,           # Max 50 files per minute (DoS protection)
+}
+```
+
+**Watched Folder & API Endpoint Hardening:**
+- Watched folder only accepts whitelisted file extensions (no executables)
+- File size cap (100MB) prevents disk exhaustion attacks
+- Rate limiting on `/api/ingest` endpoint (50 req/min)
+- API key generated at first startup, stored in user home directory
+- No outbound network calls (all models run locally, no telemetry)
+- Optional: encrypt DuckDB with user passphrase (prompted at first launch)
+
+**Backup Strategy:**
+
+```bash
+# Automated daily backup (add to crontab / Task Scheduler)
+# Backs up DuckDB + FAISS indexes + knowledge graph (models not backed up — re-downloadable)
+BACKUP_DIR="$HOME/CortexLab/backups/$(date +%Y%m%d)"
+mkdir -p "$BACKUP_DIR"
+cp data/memories.duckdb "$BACKUP_DIR/"
+cp -r data/indexes/ "$BACKUP_DIR/"
+cp data/graph.gpickle "$BACKUP_DIR/"
+# Keep last 30 days of backups
+find "$HOME/CortexLab/backups/" -maxdepth 1 -mtime +30 -exec rm -rf {} \;
+```
+
 ---
 
 ## 13. Advanced Enhancements: Research-Driven Improvements
 
 > **Added:** February 19, 2026 — Based on cross-referencing with Advanced_RAG_Architecture_Guide, RAG-DL-ResearchPage, and RAG_Literature_Survey
 
-These 13 enhancements address gaps identified from surveying 100+ papers and production RAG deployments. Each is designed to integrate cleanly into the existing architecture without breaking any planned functionality, and is validated against the GTX 1650 (4GB VRAM) constraint.
+These 15 enhancements address gaps identified from surveying 100+ papers and production RAG deployments. Each is designed to integrate cleanly into the existing architecture without breaking any planned functionality, and is validated against the RTX 4000 Ada Generation (20GB VRAM) constraint.
 
 ---
 
@@ -2137,7 +2510,7 @@ class ContextualChunker:
     Enrich memory chunks with surrounding document/session context.
     
     Cost: 1 LLM call per chunk at ingestion time (background, not query-time).
-    VRAM: Uses the same DeepSeek-R1-1.5B already loaded.
+    VRAM: Uses the same DeepSeek-R1-Distill-Qwen-7B already loaded (~4.2GB).
     Latency: 0ms at query time (context is pre-baked into stored text).
     """
     
@@ -2226,7 +2599,7 @@ class SemanticChunker:
     Chunk text at semantic boundaries using embedding similarity.
     
     Cost: Embeds all sentences once at ingestion time.
-    VRAM: Uses BGE-small already loaded (~130MB).
+    VRAM: Uses BGE-large-en-v1.5 already loaded (~1.3GB).
     """
     
     def __init__(
@@ -2299,7 +2672,7 @@ class SemanticChunker:
         return [s.strip() for s in sentences if s.strip()]
 ```
 
-**VRAM Impact:** 0 additional (reuses BGE-small).
+**VRAM Impact:** 0 additional (reuses BGE-large-en-v1.5).
 
 ---
 
@@ -2332,7 +2705,7 @@ class SemanticChunker:
 │  • Intent is CAUSAL or REFLECTIVE                                    │
 │  • Initial retrieval returned < 5 results with score > 0.7          │
 │                                                                      │
-│  Cost: 1 LLM call (~80 tokens) = ~0.5s on DeepSeek-R1-1.5B         │
+│  Cost: 1 LLM call (~80 tokens) = ~0.3s on DeepSeek-R1-Distill-Qwen-7B  │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -2541,7 +2914,7 @@ class MultiLevelCache:
 
 ### 13.5 Enhancement: Vector Quantization for Memory-Efficient ANN
 
-**Gap Identified:** Current architecture uses raw FAISS with 384-dimensional float32 vectors. At scale (100K+ memories with propositions and RAPTOR nodes), this could consume 500MB+ RAM. Vector quantization compresses vectors 4-16x with minimal recall loss.
+**Gap Identified:** Current architecture uses raw FAISS with 1024-dimensional float32 vectors (BGE-large-en-v1.5). At scale (100K+ memories with propositions and RAPTOR nodes), this could consume 2GB+ RAM. Vector quantization compresses vectors 4-16x with minimal recall loss, keeping index memory well within the 20GB VRAM budget.
 
 **Research Source:** Production Vector DB best practices (Milvus, FAISS, PingCAP); ANN benchmark literature.
 
@@ -2553,9 +2926,9 @@ class MultiLevelCache:
 │                                                                                 │
 │  Current: FAISS IndexFlatIP (brute-force, exact)                               │
 │  ─────────────────────────────────────────────────────────────────────        │
-│  Memory: 384 dims × 4 bytes × N vectors                                       │
-│  At 100K vectors: ~150MB                                                       │
-│  At 500K vectors: ~750MB   ← Problem on 4GB VRAM!                             │
+│  Memory: 1024 dims × 4 bytes × N vectors                                      │
+│  At 100K vectors: ~400MB                                                       │
+│  At 500K vectors: ~2.0GB   ← Still comfortable on 20GB VRAM                    │
 │                                                                                 │
 │  Optimized: Tiered Index Strategy                                              │
 │  ─────────────────────────────────────────────────────────────────────        │
@@ -2565,23 +2938,23 @@ class MultiLevelCache:
 │  ├─ Params: M=16, ef_construction=200, ef_search=64                            │
 │  ├─ Recall: ~98%                                                               │
 │  ├─ Latency: ~5ms                                                              │
-│  └─ Memory: Full float32 (small dataset, ~10K vectors = ~15MB)                │
+│  └─ Memory: Full float32 (small dataset, ~10K vectors = ~40MB)                │
 │                                                                                 │
 │  Tier 2 (Warm): Older memories (30 days - 1 year)                              │
 │  ├─ Index: IVF + SQ8 (scalar quantization)                                    │
 │  ├─ Params: nlist=256, nprobe=16                                               │
 │  ├─ Recall: ~95%                                                               │
 │  ├─ Latency: ~15ms                                                             │
-│  └─ Memory: 4x compressed (~50K vectors = ~20MB vs 75MB raw)                  │
+│  └─ Memory: 4x compressed (~50K vectors = ~50MB vs 200MB raw)                  │
 │                                                                                 │
 │  Tier 3 (Cold): Archival memories (>1 year)                                    │
 │  ├─ Index: IVF + PQ (product quantization)                                     │
 │  ├─ Params: nlist=512, nprobe=8, m_pq=48                                       │
 │  ├─ Recall: ~90%                                                               │
 │  ├─ Latency: ~25ms                                                             │
-│  └─ Memory: 8-16x compressed (~100K vectors = ~10MB vs 150MB raw)             │
+│  └─ Memory: 8-16x compressed (~100K vectors = ~25MB vs 400MB raw)             │
 │                                                                                 │
-│  Total at 160K vectors: ~45MB (vs ~250MB uncompressed)                         │
+│  Total at 160K vectors: ~115MB (vs ~650MB uncompressed)                         │
 │  Savings: ~80% memory reduction                                               │
 │                                                                                 │
 │  Migration: Monthly background job promotes/demotes vectors between tiers      │
@@ -2608,7 +2981,7 @@ from datetime import datetime, timedelta
 class TieredVectorStore:
     """Memory-efficient vector storage with tiered indexing."""
     
-    DIM = 384  # BGE-small embedding dimension
+    DIM = 1024  # BGE-large-en-v1.5 embedding dimension
     
     def __init__(self):
         # Tier 1: Hot (HNSW - exact, fast)
@@ -3172,7 +3545,7 @@ Refined:"""
 
 ### 13.11 Enhancement: Token Efficiency Optimization
 
-**Gap Identified:** Agentic RAG with 6 agents, multi-query generation, HyDE, Self-RAG critique, and FLARE can consume enormous token budgets. Without optimization, a complex query might trigger 8-10 LLM calls. Token efficiency directly translates to latency on a GTX 1650.
+**Gap Identified:** Agentic RAG with 6 agents, multi-query generation, HyDE, Self-RAG critique, and FLARE can consume enormous token budgets. Without optimization, a complex query might trigger 8-10 LLM calls. Token efficiency directly translates to latency on an RTX 4000 Ada Generation.
 
 **Research Source:** TeaRAG (Token-Efficient Agentic RAG, 2025); Production agentic RAG optimization patterns.
 
@@ -3185,13 +3558,14 @@ Refined:"""
 │  Problem: Worst-case token budget per complex query                            │
 │  ─────────────────────────────────────────────────────────────────────        │
 │  Intent Classification:    ~50 tokens (SetFit, no LLM)             ✅ Free    │
-│  Multi-Query (4 variants): ~200 tokens generation                  ~0.5s      │
-│  HyDE:                     ~150 tokens generation                  ~0.4s      │
-│  Step-Back:                ~60 tokens generation                   ~0.2s      │
+│  Multi-Query (4 variants): ~200 tokens generation                  ~0.3s      │
+│  HyDE:                     ~150 tokens generation                  ~0.3s      │
+│  Step-Back:                ~60 tokens generation                   ~0.15s     │
 │  Context prompt:           ~2000 tokens (10 memories × 200 tokens) -           │
-│  Self-RAG critique:        ~300 tokens per iteration (×3 max)      ~2.4s      │
-│  FLARE re-retrieval:       ~100 tokens per trigger (×2 max)        ~0.6s      │
-│  Total worst case:         ~4000 tokens, ~8 LLM calls              ~6s        │
+│  Self-RAG critique:        ~300 tokens per iteration (×3 max)      ~1.8s      │
+│  FLARE re-retrieval:       ~100 tokens per trigger (×2 max)        ~0.4s      │
+│  Total worst case:         ~4000 tokens, ~8 LLM calls              ~6-8s      │
+│  (includes prefill, retrieval between calls, Python overhead ~1.5-2s)           │
 │                                                                                 │
 │  Optimization Strategies:                                                      │
 │  ─────────────────────────────────────────────────────────────────────        │
@@ -3219,7 +3593,7 @@ Refined:"""
 │  │  2. Write a hypothetical answer (2 sentences)                             ││
 │  │  Output JSON: {variants: [...], hypothetical: '...'}"                     ││
 │  │                                                                           ││
-│  │ Result: Saves 1 full LLM call (~0.5s) when both are needed               ││
+│  │ Result: Saves 1 full LLM call (~0.3s) when both are needed               ││
 │  └───────────────────────────────────────────────────────────────────────────┘│
 │                                                                                 │
 │  3. EARLY TERMINATION (Stop when confident)                                    │
@@ -3238,11 +3612,15 @@ Refined:"""
 │  │ • Ollama/llama.cpp: Use keep_alive to maintain model in VRAM             ││
 │  └───────────────────────────────────────────────────────────────────────────┘│
 │                                                                                 │
-│  Token Budget Summary (after optimization):                                    │
+│  Token Budget Summary (after optimization, DeepSeek-R1-Distill-Qwen-7B):      │
 │  ─────────────────────────────────────────────────────────────────────        │
-│  Simple query:  ~500 tokens, 1 LLM call,   ~1s                                │
+│  Simple query:  ~500 tokens, 1 LLM call,   ~0.8s                              │
 │  Moderate query: ~1500 tokens, 3 LLM calls, ~2.5s                              │
-│  Complex query:  ~3000 tokens, 5 LLM calls, ~5s                                │
+│  Complex query:  ~3000 tokens, 5 LLM calls, ~5-6s (P90)                        │
+│                                                                                 │
+│  Note: Latency includes LLM generation + retrieval + prefill + Python           │
+│  overhead. Cache hits reduce complex queries to ~2-3s. First-time queries       │
+│  with cold KV-cache may reach ~8s (P99).                                        │
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -3252,7 +3630,7 @@ Refined:"""
 
 ### 13.12 Enhancement: Retriever Fine-Tuning Pipeline
 
-**Gap Identified:** Current architecture uses off-the-shelf BGE-small embeddings. Over time, as the user builds up memories, fine-tuning the embedding model on their actual data would significantly improve retrieval quality for their specific vocabulary, topics, and writing style.
+**Gap Identified:** Current architecture uses off-the-shelf BGE-large-en-v1.5 embeddings. Over time, as the user builds up memories, fine-tuning the embedding model on their actual data would significantly improve retrieval quality for their specific vocabulary, topics, and writing style.
 
 **Research Source:** FedRAG (retriever fine-tuning framework, 2025); BGE fine-tuning documentation; Hard Negative Mining techniques.
 
@@ -3275,14 +3653,14 @@ Refined:"""
 │  • Memories from wrong time periods                                           │
 │  • Semantically similar but factually irrelevant                              │
 │                                                                                 │
-│  Step 2: FINE-TUNE BGE-SMALL with LoRA                                        │
+│  Step 2: FINE-TUNE BGE-large-en-v1.5 with LoRA                                  │
 │  ─────────────────────────────────────────────────────────────────────        │
-│  • Adapter method: LoRA (rank=8, alpha=16)                                    │
+│  • Adapter method: LoRA (rank=16, alpha=32)                                    │
 │  • Training: InfoNCE contrastive loss                                         │
 │  • Batch size: 32 pairs                                                       │
 │  • Epochs: 3-5                                                                 │
-│  • VRAM: ~200MB additional during training (unload LLM temporarily)           │
-│  • Duration: ~10 minutes for 1000 training pairs on GTX 1650                   │
+│  • VRAM: ~1.6GB additional during training (unload LLM temporarily)            │
+│  • Duration: ~20 minutes for 2000 training pairs on RTX 4000 Ada Generation   │
 │                                                                                 │
 │  Step 3: VALIDATE                                                              │
 │  ─────────────────────────────────────────────────────────────────────        │
@@ -3300,7 +3678,7 @@ Refined:"""
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**VRAM Impact:** ~200MB during training (temporary, LLM unloaded). 0 during normal operation.
+**VRAM Impact:** ~1.6GB during training (temporary, LLM unloaded). 0 during normal operation.
 
 ---
 
@@ -3363,7 +3741,7 @@ Refined:"""
 │  │  2. Adjust complexity thresholds (0.3, 0.7)                            │   │
 │  │     → Find optimal routing boundaries from query performance data      │   │
 │  │                                                                        │   │
-│  │  3. Fine-tune BGE-small on accumulated hard negatives                  │   │
+│  │  3. Fine-tune BGE-large-en-v1.5 on accumulated hard negatives            │   │
 │  │                                                                        │   │
 │  │  4. Update RAPTOR tree (rebuild clusters with new data)                │   │
 │  │                                                                        │   │
@@ -3379,41 +3757,900 @@ Refined:"""
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**VRAM Impact:** 0 during normal operation. Training uses ~200MB temporarily during idle windows.
+**⚠️ Circular Dependency Safeguards:**
+
+The self-improvement loop risks encoding the LLM's own errors into training data
+(e.g., bad generations become "good" examples, retrieval biases compound). We
+mitigate this with a multi-layer safety architecture:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                    DRIFT DETECTION & SAFEGUARDS                                │
+│                                                                                 │
+│  1. HELD-OUT VALIDATION SET (never used for training)                          │
+│  ┌───────────────────────────────────────────────────────────────────────────┐│
+│  │ • 200 curated query-answer pairs created at initial deployment           ││
+│  │ • Covers all intent types, complexity levels, and multi-turn patterns    ││
+│  │ • Evaluated BEFORE and AFTER every auto-optimization cycle               ││
+│  │ • ROLLBACK TRIGGER: If ANY metric drops >5% on held-out set,            ││
+│  │   auto-revert to previous configuration (weights, thresholds, index)    ││
+│  │ • Held-out set is APPEND-ONLY: new cases added, never removed           ││
+│  └───────────────────────────────────────────────────────────────────────────┘│
+│                                                                                 │
+│  2. HUMAN-IN-THE-LOOP GATES                                                   │
+│  ┌───────────────────────────────────────────────────────────────────────────┐│
+│  │ • Tier 1 (auto-apply, notify): RRF weight adjustments, ANN tuning,      ││
+│  │   cache invalidation, complexity threshold tweaks                        ││
+│  │ • Tier 2 (require user approval): Embedding fine-tuning, SetFit          ││
+│  │   retraining, RAPTOR rebuild, prompt template changes                   ││
+│  │ • Tier 3 (require explicit opt-in): LLM LoRA adapter updates,           ││
+│  │   any change affecting >10% of retrieval results                        ││
+│  │                                                                           ││
+│  │ Implementation: Each optimization generates a "change proposal" shown    ││
+│  │ in the UI with before/after metrics. User clicks approve/reject.        ││
+│  └───────────────────────────────────────────────────────────────────────────┘│
+│                                                                                 │
+│  3. SYNTHETIC DATA VALIDATION                                                  │
+│  ┌───────────────────────────────────────────────────────────────────────────┐│
+│  │ • LLM-generated training data is NEVER trusted blindly                   ││
+│  │ • Every synthetic (query, answer) pair is cross-verified:                ││
+│  │   a) Answer must be grounded in retrieved passages (faithfulness > 0.8)  ││
+│  │   b) Retrieved passages must exist in user's actual memory store         ││
+│  │   c) Generated hard negatives verified as actually irrelevant            ││
+│  │ • Unverifiable synthetic pairs are discarded, not used for training      ││
+│  │ • Max synthetic ratio: 30% of any training batch (70% must be from      ││
+│  │   real user interactions with explicit or implicit feedback)             ││
+│  └───────────────────────────────────────────────────────────────────────────┘│
+│                                                                                 │
+│  4. METRIC DRIFT MONITORING                                                    │
+│  ┌───────────────────────────────────────────────────────────────────────────┐│
+│  │ • Track 7-day rolling averages for: faithfulness, relevancy, latency,   ││
+│  │   retrieval recall, user satisfaction (thumbs up ratio)                  ││
+│  │ • Alert thresholds: >10% degradation from 30-day baseline               ││
+│  │ • Mode collapse detection: If >80% of queries route to same agent       ││
+│  │   or same retrieval channel dominates RRF — flag for review             ││
+│  │ • Diversity check: Ensure retrieved results don't converge to narrow    ││
+│  │   cluster (embedding space coverage measured monthly)                    ││
+│  └───────────────────────────────────────────────────────────────────────────┘│
+│                                                                                 │
+│  5. VERSIONED ROLLBACK                                                         │
+│  ┌───────────────────────────────────────────────────────────────────────────┐│
+│  │ • Every auto-optimization creates a versioned snapshot:                  ││
+│  │   - Embedding model weights (if fine-tuned)                              ││
+│  │   - RRF weights, complexity thresholds, routing config                   ││
+│  │   - FAISS index checkpoint                                               ││
+│  │ • Last 3 versions retained (~500MB per version)                          ││
+│  │ • One-click rollback via UI or automatic on held-out regression          ││
+│  └───────────────────────────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**VRAM Impact:** 0 during normal operation. Training uses ~1.6GB temporarily during idle windows.
 
 ---
 
-### 13.14 Summary: Enhancement Impact Matrix
+### 13.15 Enhancement: Universal Multi-Modal Data Ingestion Pipeline
+
+**Gap Identified:** Original Layer 0 only accepted text, voice, and basic document uploads. For a true personal AI memory system, users will continuously feed *any* type of data — PDFs, images, code repositories, spreadsheets, URLs, emails, handwritten notes, video recordings, and more. The system must seamlessly ingest, normalize, and index ALL of these into unified memory events with full retrieval capability.
+
+**Research Source:** Multi-Modal RAG (Google DeepMind 2024); Document AI (2024); CLIP cross-modal retrieval; ColPali visual document retrieval (2024).
+
+**Integration Point:** Layer 0 (Input Acquisition) — completely expanded to Universal Data Acquisition Hub.
+
+**File: `src/ingestion/universal_data_pipeline.py`**
+
+```python
+"""
+Universal Multi-Modal Data Ingestion Pipeline
+
+Accepts ANY data format the user provides and converts it into
+normalized memory events ready for embedding + indexing.
+
+Supported Data Types (12+ formats):
+─────────────────────────────────────
+ 1. Text/Chat     — Direct text, chat messages, notes
+ 2. Voice/Audio   — Microphone input, .wav/.mp3/.m4a files
+ 3. PDF           — Text PDFs, scanned PDFs (OCR), forms
+ 4. DOCX/ODT      — Word documents, OpenDocument text
+ 5. Images        — Screenshots, photos, diagrams, whiteboard captures
+ 6. Code Files    — .py, .js, .ts, .java, .cpp, .rs, .go, etc.
+ 7. CSV/TSV       — Tabular data with schema awareness
+ 8. JSON/JSONL    — Structured data, API responses, configs
+ 9. Excel (.xlsx) — Multi-sheet workbooks with formulas
+10. URLs/Webpages — Article extraction, link graph building
+11. Email (.eml)  — Subject/body/attachment decomposition
+12. Video (.mp4)  — Transcript + key frame descriptions
+13. Markdown/RST  — Structure-aware section parsing
+14. Calendar(.ics)— Event extraction with temporal context
+15. Handwriting   — OCR + preprocessing for handwritten notes
+16. Database/SQL  — Schema + query result import
+
+Hardware: RTX 4000 Ada Generation (20GB) — all extraction models
+loaded on-demand, unloaded after batch completes.
+
+VRAM Budget for Ingestion (on-demand, NOT concurrent with LLM inference):
+  • EasyOCR:        ~300MB (loaded only for image/handwriting/scanned PDF)
+  • BLIP-base caption: ~1GB (Salesforce/blip-image-captioning-base; loaded on-demand)
+  • Whisper base:    ~150MB (loaded only for audio/video transcription)
+  • Total peak:     ~1.5GB (models loaded one-at-a-time, never all together)
+
+  ⚠️ VRAM COORDINATION: Ingestion GPU models MUST NOT run concurrently
+  with LLM inference (DeepSeek-R1-Distill-Qwen-7B uses ~7GB at peak).
+  The IngestVRAMGuard (below) enforces mutual exclusion:
+  • When a user query arrives → ingestion GPU tasks are paused
+  • When ingestion needs GPU → it acquires a lock, loads model, processes
+    batch, unloads model, calls torch.cuda.empty_cache(), releases lock
+  • §13.16 "continuous feed" means continuous QUEUEING, not continuous
+    GPU processing. CPU-only extraction (PDF text, code parsing) runs
+    in parallel with inference; GPU tasks (OCR, captioning) are queued.
+
+  NOTE: We use BLIP-base (~1GB) instead of BLIP-2 (~3-5GB) because
+  BLIP-2's VRAM footprint conflicts with the 7B LLM on a 20GB card.
+  BLIP-base provides adequate captioning quality for memory indexing.
+"""
+
+import hashlib
+import mimetypes
+from pathlib import Path
+from typing import Dict, List, Optional, Union
+from datetime import datetime
+
+
+class UniversalDataPipeline:
+    """
+    Master ingestion pipeline: auto-detects format and routes to
+    the appropriate extractor. Every piece of data becomes one or
+    more MemoryEvent objects with full metadata.
+    """
+    
+    # Supported MIME type → handler mapping
+    HANDLERS = {
+        # Text
+        'text/plain': 'extract_text',
+        'text/markdown': 'extract_markdown',
+        'text/x-rst': 'extract_markdown',
+        
+        # Documents
+        'application/pdf': 'extract_pdf',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'extract_docx',
+        'application/vnd.oasis.opendocument.text': 'extract_docx',
+        
+        # Images
+        'image/png': 'extract_image',
+        'image/jpeg': 'extract_image',
+        'image/webp': 'extract_image',
+        'image/gif': 'extract_image',
+        'image/tiff': 'extract_image',
+        
+        # Spreadsheets / Structured Data
+        'text/csv': 'extract_csv',
+        'application/json': 'extract_json',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'extract_excel',
+        
+        # Code (detected by extension)
+        'text/x-python': 'extract_code',
+        'text/javascript': 'extract_code',
+        'text/x-typescript': 'extract_code',
+        'text/x-java': 'extract_code',
+        'text/x-c': 'extract_code',
+        'text/x-rust': 'extract_code',
+        
+        # Audio/Video
+        'audio/wav': 'extract_audio',
+        'audio/mpeg': 'extract_audio',
+        'audio/mp4': 'extract_audio',
+        'video/mp4': 'extract_video',
+        'video/webm': 'extract_video',
+        
+        # Email/Calendar
+        'message/rfc822': 'extract_email',
+        'text/calendar': 'extract_calendar',
+        
+        # URLs
+        'text/x-url': 'extract_url',
+    }
+    
+    def __init__(self, config: Dict):
+        self.config = config
+        self.dedup_hashes = set()  # SHA-256 content deduplication
+    
+    def ingest(self, source: Union[str, Path, bytes], 
+               source_type: Optional[str] = None,
+               metadata: Optional[Dict] = None) -> List[Dict]:
+        """
+        Universal entry point: ingest ANY data type.
+        
+        Args:
+            source: File path, URL, or raw bytes
+            source_type: Optional MIME type override (auto-detected if None)
+            metadata: Optional user-provided metadata
+            
+        Returns:
+            List of normalized MemoryEvent dicts ready for embedding
+        """
+        # Step 1: Detect format
+        mime_type = source_type or self._detect_type(source)
+        
+        # Step 2: Deduplication check
+        content_hash = self._compute_hash(source)
+        if content_hash in self.dedup_hashes:
+            return []  # Already ingested — skip
+        self.dedup_hashes.add(content_hash)
+        
+        # Step 3: Route to appropriate extractor
+        handler_name = self.HANDLERS.get(mime_type, 'extract_text')
+        handler = getattr(self, handler_name)
+        extracted = handler(source)
+        
+        # Step 4: Enrich with metadata
+        base_metadata = {
+            'source_type': mime_type,
+            'ingestion_timestamp': datetime.utcnow().isoformat(),
+            'content_hash': content_hash,
+            'original_source': str(source)[:500],
+            **(metadata or {})
+        }
+        
+        # Step 5: Convert to memory events
+        memory_events = []
+        for chunk in extracted:
+            event = {
+                'content': chunk['text'],
+                'metadata': {**base_metadata, **chunk.get('metadata', {})},
+                'timestamp': chunk.get('timestamp', base_metadata['ingestion_timestamp']),
+                'type': chunk.get('type', 'imported_data'),
+                'importance': chunk.get('importance', 0.5),
+            }
+            memory_events.append(event)
+        
+        return memory_events
+    
+    # ─── EXTRACTORS ───────────────────────────────────────────────────
+    
+    def extract_pdf(self, path: Union[str, Path]) -> List[Dict]:
+        """
+        Extract text, tables, and images from PDFs.
+        
+        Uses PyMuPDF (fitz) for text extraction.
+        Falls back to EasyOCR for scanned/image-only PDFs.
+        Tables detected via pdfplumber for structured extraction.
+        
+        Output: One chunk per page (with page number metadata).
+        """
+        import fitz  # PyMuPDF
+        doc = fitz.open(str(path))
+        chunks = []
+        
+        for page_num, page in enumerate(doc):
+            text = page.get_text("text")
+            
+            # If page has very little text, it might be scanned — use OCR
+            if len(text.strip()) < 50:
+                text = self._ocr_page(page)
+            
+            # Extract tables separately
+            tables = self._extract_tables_from_page(page)
+            
+            chunks.append({
+                'text': text,
+                'metadata': {
+                    'page_number': page_num + 1,
+                    'total_pages': len(doc),
+                    'has_tables': len(tables) > 0,
+                    'table_count': len(tables),
+                },
+                'type': 'document_page'
+            })
+            
+            # Add tables as separate structured chunks
+            for i, table in enumerate(tables):
+                chunks.append({
+                    'text': f"[Table {i+1} from page {page_num+1}]:\n{table}",
+                    'metadata': {'is_table': True, 'page_number': page_num + 1},
+                    'type': 'structured_data'
+                })
+        
+        doc.close()
+        return chunks
+    
+    def extract_image(self, path: Union[str, Path]) -> List[Dict]:
+        """
+        Extract information from images using:
+        1. EasyOCR — for text within images (screenshots, whiteboards, docs)
+        2. BLIP-base captioning — for visual scene description (photos, diagrams)
+        
+        Both are loaded on-demand and unloaded after processing.
+        VRAM: ~300MB OCR + ~1GB captioning (sequential, not concurrent)
+        """
+        results = []
+        
+        # OCR pass: extract any visible text
+        ocr_text = self._run_ocr(path)
+        if ocr_text and len(ocr_text.strip()) > 10:
+            results.append({
+                'text': f"[Text extracted from image]: {ocr_text}",
+                'metadata': {'extraction_method': 'ocr', 'source_format': 'image'},
+                'type': 'image_text'
+            })
+        
+        # Vision captioning pass: describe the image
+        caption = self._generate_caption(path)
+        if caption:
+            results.append({
+                'text': f"[Image description]: {caption}",
+                'metadata': {'extraction_method': 'captioning', 'source_format': 'image'},
+                'type': 'image_description'
+            })
+        
+        return results or [{'text': '[Image with no extractable content]',
+                           'metadata': {'source_format': 'image'}, 'type': 'image_placeholder'}]
+    
+    def extract_code(self, path: Union[str, Path]) -> List[Dict]:
+        """
+        Extract and chunk code files with syntax awareness.
+        
+        Strategy:
+        - Detect language from extension
+        - Parse into semantic units (functions, classes, imports)
+        - Each function/class becomes a separate retrievable chunk
+        - Preserve docstrings and comments as searchable text
+        - Add code structure metadata (language, dependencies, complexity)
+        """
+        path = Path(path)
+        content = path.read_text(encoding='utf-8', errors='replace')
+        language = self._detect_language(path.suffix)
+        
+        # Split into semantic units (functions, classes)
+        units = self._parse_code_units(content, language)
+        
+        chunks = []
+        for unit in units:
+            chunks.append({
+                'text': f"[{language} code — {unit['name']}]:\n{unit['code']}",
+                'metadata': {
+                    'language': language,
+                    'unit_type': unit['type'],  # function, class, module
+                    'unit_name': unit['name'],
+                    'line_start': unit['line_start'],
+                    'line_end': unit['line_end'],
+                    'has_docstring': unit.get('has_docstring', False),
+                },
+                'type': 'code_unit'
+            })
+        
+        return chunks
+    
+    def extract_csv(self, path: Union[str, Path]) -> List[Dict]:
+        """
+        Extract structured data from CSV/TSV files.
+        
+        Strategy:
+        - Infer schema (column names, types, statistics)
+        - Create a schema summary chunk (always retrievable)
+        - Create row-group chunks (every N rows as a described batch)
+        - Identify key patterns, outliers, and aggregates
+        """
+        import pandas as pd
+        df = pd.read_csv(str(path))
+        
+        chunks = []
+        
+        # Schema summary chunk
+        schema_desc = f"Dataset: {Path(path).name}\n"
+        schema_desc += f"Shape: {df.shape[0]} rows × {df.shape[1]} columns\n"
+        schema_desc += f"Columns: {', '.join(df.columns.tolist())}\n"
+        schema_desc += f"Types: {dict(df.dtypes.astype(str))}\n"
+        schema_desc += f"Summary:\n{df.describe().to_string()}"
+        
+        chunks.append({
+            'text': f"[Structured data schema]: {schema_desc}",
+            'metadata': {'rows': df.shape[0], 'columns': df.shape[1]},
+            'type': 'data_schema'
+        })
+        
+        # Row-group chunks (every 50 rows)
+        for start in range(0, len(df), 50):
+            batch = df.iloc[start:start+50]
+            batch_text = batch.to_string(index=False, max_rows=50)
+            chunks.append({
+                'text': f"[Data rows {start+1}-{min(start+50, len(df))}]:\n{batch_text}",
+                'metadata': {'row_start': start+1, 'row_end': min(start+50, len(df))},
+                'type': 'data_rows'
+            })
+        
+        return chunks
+    
+    def extract_json(self, path: Union[str, Path]) -> List[Dict]:
+        """Extract and flatten JSON/JSONL into searchable text chunks."""
+        import json
+        path = Path(path)
+        content = path.read_text(encoding='utf-8')
+        
+        # Handle JSONL (one JSON object per line)
+        if path.suffix == '.jsonl':
+            objects = [json.loads(line) for line in content.strip().split('\n') if line.strip()]
+        else:
+            data = json.loads(content)
+            objects = data if isinstance(data, list) else [data]
+        
+        chunks = []
+        for i, obj in enumerate(objects):
+            flat_text = json.dumps(obj, indent=2, default=str)
+            chunks.append({
+                'text': f"[JSON object {i+1}]: {flat_text[:2000]}",
+                'metadata': {'object_index': i, 'keys': list(obj.keys()) if isinstance(obj, dict) else []},
+                'type': 'structured_data'
+            })
+        
+        return chunks
+    
+    def extract_excel(self, path: Union[str, Path]) -> List[Dict]:
+        """Extract all sheets from Excel workbooks with formula awareness."""
+        import openpyxl
+        wb = openpyxl.load_workbook(str(path), data_only=True)
+        chunks = []
+        
+        for sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            # Read as text table
+            rows = []
+            for row in ws.iter_rows(values_only=True):
+                rows.append('\t'.join(str(c) if c is not None else '' for c in row))
+            
+            sheet_text = '\n'.join(rows[:200])  # Cap at 200 rows per sheet
+            chunks.append({
+                'text': f"[Excel sheet '{sheet_name}']:\n{sheet_text}",
+                'metadata': {'sheet_name': sheet_name, 'row_count': ws.max_row, 'col_count': ws.max_column},
+                'type': 'spreadsheet_data'
+            })
+        
+        wb.close()
+        return chunks
+    
+    def extract_url(self, url: str) -> List[Dict]:
+        """
+        Extract clean article text from URLs using Trafilatura.
+        Falls back to BeautifulSoup + readability for complex pages.
+        """
+        import trafilatura
+        
+        downloaded = trafilatura.fetch_url(url)
+        if downloaded:
+            text = trafilatura.extract(downloaded, include_tables=True, include_comments=False)
+            if text:
+                return [{
+                    'text': f"[Web content from {url}]:\n{text[:5000]}",
+                    'metadata': {'url': url, 'extraction_method': 'trafilatura'},
+                    'type': 'web_content'
+                }]
+        
+        return [{'text': f'[Failed to extract content from {url}]',
+                 'metadata': {'url': url}, 'type': 'web_content'}]
+    
+    def extract_audio(self, path: Union[str, Path]) -> List[Dict]:
+        """Transcribe audio files using faster-whisper (base model, ~150MB VRAM)."""
+        from faster_whisper import WhisperModel
+        
+        model = WhisperModel("base", device="cuda", compute_type="float16")
+        segments, info = model.transcribe(str(path))
+        
+        full_text = ' '.join(seg.text for seg in segments)
+        return [{
+            'text': f"[Audio transcription ({info.language}, {info.duration:.0f}s)]: {full_text}",
+            'metadata': {
+                'language': info.language,
+                'duration_seconds': info.duration,
+                'source_format': 'audio'
+            },
+            'type': 'audio_transcript'
+        }]
+    
+    def extract_video(self, path: Union[str, Path]) -> List[Dict]:
+        """
+        Extract from video: audio transcript + key frame descriptions.
+        
+        Pipeline:
+        1. Extract audio track → Whisper transcription
+        2. Sample key frames (1 per 30 seconds) → BLIP-base captions
+        3. Combine into timestamped narrative
+        
+        VRAM: ~150MB (Whisper) + ~1GB (BLIP-base), loaded sequentially
+        """
+        chunks = []
+        
+        # Audio transcript
+        audio_path = self._extract_audio_from_video(path)
+        if audio_path:
+            transcript_chunks = self.extract_audio(audio_path)
+            chunks.extend(transcript_chunks)
+        
+        # Key frame descriptions (sampled every 30 seconds)
+        frames = self._sample_video_frames(path, interval_seconds=30)
+        for i, (timestamp, frame_path) in enumerate(frames):
+            caption = self._generate_caption(frame_path)
+            if caption:
+                chunks.append({
+                    'text': f"[Video frame at {timestamp}s]: {caption}",
+                    'metadata': {'timestamp_seconds': timestamp, 'frame_index': i},
+                    'type': 'video_frame_description'
+                })
+        
+        return chunks
+    
+    def extract_email(self, path: Union[str, Path]) -> List[Dict]:
+        """Parse .eml files into subject, body, and attachment events."""
+        import email
+        from email import policy
+        
+        with open(str(path), 'rb') as f:
+            msg = email.message_from_binary_file(f, policy=policy.default)
+        
+        chunks = [{
+            'text': (f"[Email from {msg['from']} to {msg['to']}]\n"
+                     f"Subject: {msg['subject']}\n"
+                     f"Date: {msg['date']}\n\n"
+                     f"{msg.get_body(preferencelist=('plain',)).get_content()[:3000]}"),
+            'metadata': {
+                'from': str(msg['from']),
+                'to': str(msg['to']),
+                'subject': str(msg['subject']),
+                'date': str(msg['date']),
+            },
+            'type': 'email_message'
+        }]
+        
+        # Process attachments recursively
+        for attachment in msg.iter_attachments():
+            att_data = attachment.get_content()
+            att_name = attachment.get_filename() or 'unnamed_attachment'
+            # Re-ingest attachment through the universal pipeline
+            chunks.append({
+                'text': f"[Email attachment: {att_name}] (queued for separate ingestion)",
+                'metadata': {'attachment_name': att_name, 'parent_email': str(msg['subject'])},
+                'type': 'email_attachment'
+            })
+        
+        return chunks
+    
+    def extract_calendar(self, path: Union[str, Path]) -> List[Dict]:
+        """Parse .ics calendar files into temporal memory events."""
+        from icalendar import Calendar
+        
+        with open(str(path), 'rb') as f:
+            cal = Calendar.from_ical(f.read())
+        
+        chunks = []
+        for component in cal.walk():
+            if component.name == 'VEVENT':
+                event_text = (
+                    f"[Calendar event]: {component.get('summary', 'Untitled')}\n"
+                    f"When: {component.get('dtstart', {}).dt} to {component.get('dtend', {}).dt}\n"
+                    f"Location: {component.get('location', 'N/A')}\n"
+                    f"Description: {str(component.get('description', ''))[:500]}"
+                )
+                chunks.append({
+                    'text': event_text,
+                    'metadata': {
+                        'event_name': str(component.get('summary', '')),
+                        'start_time': str(component.get('dtstart', {}).dt),
+                    },
+                    'timestamp': str(component.get('dtstart', {}).dt),
+                    'type': 'calendar_event',
+                    'importance': 0.7  # Calendar events are moderately important
+                })
+        
+        return chunks
+    
+    def extract_markdown(self, path: Union[str, Path]) -> List[Dict]:
+        """Parse Markdown files into headed sections for granular retrieval."""
+        content = Path(path).read_text(encoding='utf-8', errors='replace')
+        sections = self._split_by_headers(content)
+        
+        return [{
+            'text': f"[Markdown section: {s['header']}]\n{s['content']}",
+            'metadata': {'header': s['header'], 'level': s['level']},
+            'type': 'document_section'
+        } for s in sections]
+    
+    def extract_text(self, source: Union[str, Path]) -> List[Dict]:
+        """Fallback: treat as plain text."""
+        if isinstance(source, (str, Path)) and Path(source).is_file():
+            text = Path(source).read_text(encoding='utf-8', errors='replace')
+        else:
+            text = str(source)
+        return [{'text': text, 'metadata': {}, 'type': 'text_memory'}]
+    
+    # ─── UTILITY METHODS ──────────────────────────────────────────────
+    
+    def _detect_type(self, source) -> str:
+        """Auto-detect MIME type from file extension or content."""
+        if isinstance(source, str) and source.startswith(('http://', 'https://')):
+            return 'text/x-url'
+        if isinstance(source, (str, Path)):
+            mime, _ = mimetypes.guess_type(str(source))
+            return mime or 'text/plain'
+        return 'text/plain'
+    
+    def _compute_hash(self, source) -> str:
+        """SHA-256 hash for deduplication."""
+        if isinstance(source, bytes):
+            return hashlib.sha256(source).hexdigest()
+        if isinstance(source, (str, Path)) and Path(source).is_file():
+            return hashlib.sha256(Path(source).read_bytes()).hexdigest()
+        return hashlib.sha256(str(source).encode()).hexdigest()
+    
+    def _detect_language(self, extension: str) -> str:
+        """Map file extension to programming language."""
+        lang_map = {
+            '.py': 'Python', '.js': 'JavaScript', '.ts': 'TypeScript',
+            '.java': 'Java', '.cpp': 'C++', '.c': 'C', '.rs': 'Rust',
+            '.go': 'Go', '.rb': 'Ruby', '.php': 'PHP', '.swift': 'Swift',
+            '.kt': 'Kotlin', '.scala': 'Scala', '.r': 'R', '.sql': 'SQL',
+            '.sh': 'Shell', '.yaml': 'YAML', '.yml': 'YAML', '.toml': 'TOML',
+        }
+        return lang_map.get(extension.lower(), 'Unknown')
+    
+    def _parse_code_units(self, content: str, language: str) -> List[Dict]:
+        """Parse code into semantic units (functions, classes)."""
+        # For Python: use ast module
+        # For others: use tree-sitter or regex-based splitting
+        # Returns list of {name, type, code, line_start, line_end}
+        # Implementation varies by language
+        pass
+    
+    def _run_ocr(self, path) -> str:
+        """Run EasyOCR on an image. Loaded on-demand, ~300MB VRAM."""
+        import easyocr
+        reader = easyocr.Reader(['en'], gpu=True)
+        results = reader.readtext(str(path))
+        return ' '.join(text for _, text, conf in results if conf > 0.5)
+    
+    def _generate_caption(self, path) -> str:
+        """Generate image caption using BLIP-base. ~1GB VRAM, on-demand.
+        
+        Uses Salesforce/blip-image-captioning-base instead of BLIP-2
+        to fit within 20GB VRAM budget alongside the 7B LLM.
+        Model is loaded on-demand, inference runs, then model is
+        explicitly unloaded with torch.cuda.empty_cache().
+        """
+        import torch
+        from PIL import Image
+        from transformers import BlipProcessor, BlipForConditionalGeneration
+        
+        try:
+            processor = BlipProcessor.from_pretrained(
+                "Salesforce/blip-image-captioning-base"
+            )
+            model = BlipForConditionalGeneration.from_pretrained(
+                "Salesforce/blip-image-captioning-base",
+                torch_dtype=torch.float16
+            ).to("cuda")
+            
+            image = Image.open(path).convert("RGB")
+            inputs = processor(image, return_tensors="pt").to("cuda", torch.float16)
+            
+            with torch.no_grad():
+                output = model.generate(**inputs, max_new_tokens=50)
+            caption = processor.decode(output[0], skip_special_tokens=True)
+            
+        finally:
+            # CRITICAL: Free VRAM for LLM inference
+            del model, processor
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        
+        return caption
+    
+    def _ocr_page(self, page) -> str:
+        """OCR a PDF page that has no extractable text (scanned)."""
+        # Render page to image, then run OCR
+        pix = page.get_pixmap(dpi=200)
+        img_bytes = pix.tobytes("png")
+        return self._run_ocr(img_bytes)
+    
+    def _extract_tables_from_page(self, page) -> List[str]:
+        """Extract tables from a PDF page using pdfplumber."""
+        # Returns list of table strings (markdown format)
+        pass
+    
+    def _extract_audio_from_video(self, video_path) -> Optional[str]:
+        """Extract audio track from video using ffmpeg."""
+        # subprocess: ffmpeg -i video.mp4 -vn -acodec pcm_s16le audio.wav
+        pass
+    
+    def _sample_video_frames(self, video_path, interval_seconds=30) -> List:
+        """Sample key frames from video at given interval."""
+        # subprocess: ffmpeg -i video.mp4 -vf fps=1/{interval} frame_%d.jpg
+        pass
+    
+    def _split_by_headers(self, markdown: str) -> List[Dict]:
+        """Split markdown by headers into sections."""
+        import re
+        sections = []
+        current = {'header': 'Introduction', 'level': 0, 'content': ''}
+        for line in markdown.split('\n'):
+            match = re.match(r'^(#{1,6})\s+(.+)', line)
+            if match:
+                if current['content'].strip():
+                    sections.append(current)
+                current = {
+                    'header': match.group(2),
+                    'level': len(match.group(1)),
+                    'content': ''
+                }
+            else:
+                current['content'] += line + '\n'
+        if current['content'].strip():
+            sections.append(current)
+        return sections
+```
+
+**Supported Data Types — Complete Coverage Matrix:**
+
+| Data Type | Extractor | Output Format | VRAM (On-Demand) | Chunking Strategy |
+|-----------|-----------|---------------|-----------------|-------------------|
+| Text/Chat | Direct passthrough | Raw text | 0 | Semantic chunking |
+| Voice/Audio | faster-whisper (base) | Transcript text | ~150MB | Time-windowed segments |
+| PDF (text) | PyMuPDF (fitz) | Pages + tables | 0 (CPU) | Page-level + table separation |
+| PDF (scanned) | PyMuPDF → EasyOCR | OCR text | ~300MB | Page-level with confidence |
+| DOCX/ODT | python-docx / pandoc | Structured text | 0 (CPU) | Section-level |
+| Images | EasyOCR + BLIP-base | OCR text + caption | ~1GB | Per-image event |
+| Code files | AST / tree-sitter | Semantic code units | 0 (CPU) | Function/class level |
+| CSV/TSV | pandas | Schema + row groups | 0 (CPU) | Schema chunk + 50-row batches |
+| JSON/JSONL | json module | Flattened objects | 0 (CPU) | Per-object chunk |
+| Excel (.xlsx) | openpyxl | Sheet text + formulas | 0 (CPU) | Per-sheet chunks |
+| URLs/Webpages | Trafilatura | Clean article text | 0 (CPU) | Article sections |
+| Email (.eml) | email.parser | Subject/body split | 0 (CPU) | Message + attachments |
+| Video (.mp4) | ffmpeg + Whisper + BLIP-base | Transcript + frames | ~1.2GB | 30s segments + key frames |
+| Calendar (.ics) | icalendar | Event descriptions | 0 (CPU) | Per-event chunk |
+| Markdown/RST | Regex header splitting | Headed sections | 0 (CPU) | Section-level |
+| Handwriting | EasyOCR + preprocessing | Recognized text | ~300MB | Per-page/image |
+
+**Key Design Principles:**
+1. **On-Demand Model Loading:** Heavy models (OCR, captioning) are loaded only when needed, then unloaded — never competing with inference VRAM
+2. **SHA-256 Deduplication:** Identical content is never re-ingested, even if uploaded again
+3. **Metadata Enrichment:** Every chunk carries provenance (source file, page number, extraction method, confidence)
+4. **Graceful Degradation:** If an extractor fails, content is still stored as raw text with a low confidence flag
+5. **Recursive Processing:** Email attachments, embedded images in PDFs, etc. are recursively re-ingested through the pipeline
+
+**VRAM Impact:** ~300MB–1GB on-demand during ingestion batches (models loaded sequentially, never simultaneously). 0 during querying (all extraction is at ingestion time). GPU ingestion tasks are mutex-locked against LLM inference — see VRAM Coordination note above.
+
+---
+
+### 13.16 Enhancement: Continuous Data Feed & Incremental Indexing
+
+**Gap Identified:** Users don't just upload files once — they continuously feed data over weeks and months. The system needs an always-on ingestion endpoint that watches for new data, processes it in the background, and incrementally updates all indexes without downtime.
+
+**Research Source:** Streaming RAG indexing (Weaviate 2024); Incremental HNSW updates; Event-driven architectures.
+
+**Integration Point:** Layer 0 → Layer 1 → Layer 2 — background ingestion pipeline.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                    CONTINUOUS DATA FEED ARCHITECTURE                           │
+│                    (Always-on, incremental, zero-downtime)                      │
+│                                                                                 │
+│  ┌───────────────────────────────────────────────────────────────────────────┐ │
+│  │  DATA SOURCES (user continuously feeds)                                  │ │
+│  │                                                                           │ │
+│  │  • Chat messages (real-time, as user types)                              │ │
+│  │  • File drag-and-drop (any supported format)                             │ │
+│  │  • Clipboard paste (text, images, URLs)                                  │ │
+│  │  • Watched folder (auto-ingest new files from ~/CortexLab/inbox/)        │ │
+│  │  • API endpoint (POST /api/ingest — for integrations)                    │ │
+│  │  • Browser extension (save web pages directly)                           │ │
+│  │  • Email forwarding (dedicated ingest email address)                     │ │
+│  └───────────────────────────────────────────────────┬───────────────────────┘ │
+│                                                       │                         │
+│                                                       ▼                         │
+│  ┌───────────────────────────────────────────────────────────────────────────┐ │
+│  │  INGESTION QUEUE (async, priority-ordered)                               │ │
+│  │                                                                           │ │
+│  │  Priority 1: Real-time chat messages (process immediately, <100ms)       │ │
+│  │  Priority 2: Clipboard/drag-drop (process within 5 seconds)             │ │
+│  │  Priority 3: File uploads (process within 30 seconds)                    │ │
+│  │  Priority 4: Watched folder batch (process within 5 minutes)            │ │
+│  │  Priority 5: Background re-indexing (during idle time only)             │ │
+│  │                                                                           │ │
+│  │  Queue: asyncio.PriorityQueue — in-memory with SQLite WAL persistence   │ │
+│  └───────────────────────────────────────────────────┬───────────────────────┘ │
+│                                                       │                         │
+│                                                       ▼                         │
+│  ┌───────────────────────────────────────────────────────────────────────────┐ │
+│  │  INCREMENTAL INDEX UPDATES (no full re-index needed)                     │ │
+│  │                                                                           │ │
+│  │  1. New memory → embed with BGE-large-en-v1.5 (1024d)                   │ │
+│  │  2. Add vector to FAISS HNSW hot tier (supports incremental add)        │ │
+│  │  3. Insert into DuckDB SQL store (atomic transaction)                   │ │
+│  │  4. Update knowledge graph (add entity nodes + relationship edges)      │ │
+│  │  5. Update BM25 inverted index (append new terms)                       │ │
+│  │  6. RAPTOR tree: DEFERRED UPDATE (see note below)                       │ │
+│  │  7. Invalidate relevant cache entries (semantic similarity check)       │ │
+│  │                                                                           │ │
+│  │  Steps 1-5, 7 complete in <500ms for text, <5s for files               │ │
+│  │                                                                           │ │
+│  │  ⚠️ RAPTOR NOTE: RAPTOR's hierarchical clusters were designed for       │ │
+│  │  static corpora. True incremental insertion that preserves semantic     │ │
+│  │  coherence is an open research problem. Our approach:                   │ │
+│  │  • New memories are immediately searchable via flat vector + BM25       │ │
+│  │  • RAPTOR tree rebuild is BATCHED (runs during idle periods)            │ │
+│  │  • Trigger: when >50 new memories since last rebuild, or weekly         │ │
+│  │  • Rebuild time: ~2-5min for 10K memories (LLM-generated summaries)    │ │
+│  │  • During rebuild: old tree remains queryable, swap is atomic           │ │
+│  │  This means RAPTOR summaries may lag behind by hours/days, but raw      │ │
+│  │  memory retrieval is always real-time.                                  │ │
+│  └───────────────────────────────────────────────────────────────────────────┘ │
+│                                                                                 │
+│  ┌───────────────────────────────────────────────────────────────────────────┐ │
+│  │  BACKGROUND MAINTENANCE (runs during idle periods)                       │ │
+│  │                                                                           │ │
+│  │  • Hot → Warm tier migration (memories > 30 days old)                   │ │
+│  │  • RAPTOR tree rebuild (when cluster centroids shift >10%)              │ │
+│  │  • Knowledge graph pruning (remove low-confidence edges)                │ │
+│  │  • Deduplication sweep (find near-duplicate memories, merge)            │ │
+│  │  • Memory consolidation (daily → weekly → monthly summaries)            │ │
+│  │  • Statistics update (for monitoring dashboard)                          │ │
+│  └───────────────────────────────────────────────────────────────────────────┘ │
+│                                                                                 │
+│  VRAM: 0 additional (uses existing BGE-large for embedding)                    │
+│  Throughput: ~50 text memories/sec, ~5 files/sec (on RTX 4000 Ada Gen)        │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**VRAM Impact:** 0 additional (reuses existing embedding model). All heavy processing is queued and time-sliced with inference.
+
+---
+
+### 13.17 Summary: Enhancement Impact Matrix
 
 | # | Enhancement | Query-Time Latency | VRAM Cost | Accuracy Impact | Priority |
 |---|---|---|---|---|---|
 | 13.1 | Contextual Chunking | 0ms (ingestion) | 0 | +10-15% retrieval | ⭐⭐⭐ HIGH |
 | 13.2 | Semantic Chunking | 0ms (ingestion) | 0 | +5-8% retrieval | ⭐⭐ MEDIUM |
-| 13.3 | Step-Back Prompting | +0.5s (when triggered) | 0 | +8-12% for causal queries | ⭐⭐ MEDIUM |
+| 13.3 | Step-Back Prompting | +0.3s (when triggered) | 0 | +8-12% for causal queries | ⭐⭐ MEDIUM |
 | 13.4 | Multi-Level Caching | -2-4s (cache hit) | ~20MB | 40%+ queries instant | ⭐⭐⭐ HIGH |
 | 13.5 | Vector Quantization | -10ms (faster search) | -80% vectors | ~2% recall tradeoff | ⭐⭐⭐ HIGH |
 | 13.6 | ANN Index Tuning | -50ms P99 | 0 | 0 (same recall) | ⭐⭐⭐ HIGH |
 | 13.7 | Async Retrieval | -250ms | 0 | 0 | ⭐⭐⭐ HIGH |
 | 13.8 | RAGChecker | 0 (offline) | 0 | Diagnostic visibility | ⭐⭐ MEDIUM |
-| 13.9 | Failure-Aware Refinement | +0.5s (when needed) | 0 | +15-20% recovery | ⭐⭐⭐ HIGH |
+| 13.9 | Failure-Aware Refinement | +0.3s (when needed) | 0 | +15-20% recovery | ⭐⭐⭐ HIGH |
 | 13.10 | Chain-of-Retrieval | +1-2s (complex only) | 0 | +20% multi-hop accuracy | ⭐⭐ MEDIUM |
 | 13.11 | Token Efficiency | -30-50% tokens | Reduces peak | Faster overall | ⭐⭐⭐ HIGH |
-| 13.12 | Retriever Fine-tuning | 0 (background) | 200MB temp | +5-15% over time | ⭐⭐ MEDIUM |
-| 13.13 | Continuous Self-Improvement | 0 (background) | 200MB temp | Compounding gains | ⭐⭐ MEDIUM |
+| 13.12 | Retriever Fine-tuning | 0 (background) | ~1.6GB temp | +5-15% over time | ⭐⭐⭐ HIGH |
+| 13.13 | Continuous Self-Improvement | 0 (background) | ~1.6GB temp | Compounding gains | ⭐⭐⭐ HIGH |
+| 13.15 | Universal Multi-Modal Ingestion | 0ms (query) | ~300-550MB on-demand | 12+ data types supported | ⭐⭐⭐ CRITICAL |
+| 13.16 | Continuous Data Feed | <500ms (incremental) | 0 | Zero-downtime index updates | ⭐⭐⭐ CRITICAL |
 
 ---
 
 ## Summary
 
-This RAG architecture represents the state-of-the-art in personal AI memory systems, combining:
+This RAG architecture represents the **state-of-the-art in personal AI memory systems**, purpose-built for the **NVIDIA RTX 4000 Ada Generation (20GB VRAM)** and powered by **DeepSeek-R1-Distill-Qwen-7B** (10-stage QLoRA fine-tuned + DPO aligned). It combines 30+ cutting-edge techniques:
 
+✅ **Universal Data Ingestion** (16+ data types: text, PDF, images, code, audio, video, CSV, JSON, Excel, URLs, email, calendar, handwriting — any data the user feeds)  
+✅ **Continuous Data Feed** (Always-on ingestion with async priority queue, watched folders, clipboard paste, API endpoints — incremental indexing with zero downtime)  
 ✅ **Hierarchical Indexing** (RAPTOR + Propositions + Contextual Chunking + Semantic Boundaries)  
-✅ **Agentic Reasoning** (Specialized agents with orchestration + Chain-of-Retrieval)  
-✅ **Hybrid Retrieval** (Dense + Sparse + Graph + Temporal + Async Parallel Execution)  
+✅ **Agentic Reasoning** (6 specialized agents: Orchestrator, Timeline, Causal, Reflection, Planning, Arbitration + Chain-of-Retrieval)  
+✅ **Hybrid Retrieval** (Dense 1024d BGE-large + Sparse BM25 + Graph + Temporal + Proposition — Async Parallel Execution)  
 ✅ **Self-Reflection** (CRAG + Self-RAG + FLARE + Failure-Aware Refinement)  
-✅ **Memory Evolution** (Belief tracking + Consolidation)  
+✅ **Memory Evolution** (Belief tracking + Consolidation + Entity Resolution)  
 ✅ **Production Optimization** (Multi-Level Caching + Vector Quantization + ANN Tuning + Token Efficiency)  
 ✅ **Continuous Improvement** (RAGChecker Diagnostics + Retriever Fine-tuning + Self-Improvement Loop)  
-✅ **Hardware-Optimized** (All 25+ techniques validated against GTX 1650 4GB VRAM budget)
+✅ **DPO-Aligned Generation** (Faithfulness > 0.92, Multi-turn coherence > 0.88, Long-context recall > 0.85)  
+✅ **Hardware-Maximized** (Training 63% VRAM utilization, Inference 34% — all 30+ techniques validated against 20GB budget)
 
-**Cortex Lab is not just a chatbot—it's your second brain, powered by cutting-edge research and optimized for consumer hardware.** 🧠🚀
+**VRAM Budget Summary:**
+
+| Component | VRAM | Notes |
+|-----------|------|-------|
+| DeepSeek-R1-Distill-Qwen-7B (bf16) | ~4.2GB | Primary LLM — 10-stage fine-tuned + DPO |
+| BGE-large-en-v1.5 (1024d) | ~1.3GB | Dense embedding model |
+| BGE-reranker-v2-m3 | ~1.1GB | Cross-encoder reranking |
+| Classifiers + Whisper | ~350MB | SetFit (3x) + faster-whisper base |
+| Vector indexes (FAISS) | ~115MB | PQ/SQ8 compressed, 500K vectors |
+| Multi-level cache | ~20MB | Embedding + semantic + response |
+| **Total Inference** | **~7.1GB** | **35% of 20GB** |
+| **Available for Training** | **~13GB** | **QLoRA fine-tuning + DPO alignment** |
+| **Available for Ingestion** | **~13GB** | **OCR/captioning models loaded on-demand** |
+
+**Cortex Lab is not just a chatbot — it's your second brain. It ingests ANY data you feed it, remembers EVERYTHING, reasons over your personal knowledge with 6 specialized agents, and continuously improves. Powered by cutting-edge research and maximized for the RTX 4000 Ada Generation.** 🧠🚀

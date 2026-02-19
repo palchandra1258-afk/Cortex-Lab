@@ -7,7 +7,7 @@
 
 **Cortex Lab** is a fully local, resource-efficient personal AI system that acts as a **continuous conversational memory and reasoning layer**. Unlike traditional chatbots that forget past interactions, Cortex Lab builds a persistent cognitive model of your life—learning from daily conversations, extracting meaningful patterns, and evolving its understanding over time.
 
-**Key Innovation:** A **9-layer Agentic RAG** (Retrieval-Augmented Generation) architecture synthesizing **25+ cutting-edge techniques** from top-tier venues (ICLR, NeurIPS, EMNLP, NAACL, ACL 2023-2025), powered by a fine-tuned lightweight LLM (DeepSeek-R1-1.5B), designed to run entirely on consumer hardware (NVIDIA GTX 1650, 4GB VRAM) while delivering state-of-the-art reasoning capabilities.
+**Key Innovation:** A **9-layer Agentic RAG** (Retrieval-Augmented Generation) architecture synthesizing **25+ cutting-edge techniques** from top-tier venues (ICLR, NeurIPS, EMNLP, NAACL, ACL 2023-2025), powered by a fine-tuned lightweight LLM (DeepSeek-R1-1.5B), designed to run entirely on consumer hardware (NVIDIA RTX 4000 Ada Generation, 20GB VRAM) while delivering state-of-the-art reasoning capabilities.
 
 > 📖 **Deep Technical Reference:** For complete implementation details, architecture diagrams, code examples, and research citations for all 25+ techniques, see **[RAG-Architecture.md](RAG-Architecture.md)** — the 3,400+ line production-ready implementation guide.
 
@@ -43,7 +43,7 @@ Current personal AI assistants suffer from critical limitations that prevent the
 #### **Resource Constraints**
 - **Cloud Dependency**: Advanced models (GPT-4, Claude) require expensive API calls and send your data to third-party servers.
 - **GPU Requirements**: Most powerful open-source models (Llama 70B, Mistral 7B) require high-end GPUs (24GB+ VRAM) unavailable to average users.
-- **Limited Consumer Hardware**: The NVIDIA GTX 1650 (4GB VRAM) represents the reality for millions of users but is considered insufficient for modern AI workloads.
+- **Limited Consumer Hardware**: The NVIDIA RTX 4000 Ada Generation (20GB VRAM) represents the reality for millions of users but is considered insufficient for modern AI workloads.
 
 #### **Reasoning Gaps**
 - **Shallow Retrieval**: Simple similarity search fails to capture causal relationships, temporal context, or nuanced connections between memories.
@@ -52,7 +52,7 @@ Current personal AI assistants suffer from critical limitations that prevent the
 
 ### 1.2 The Core Challenge
 
-> **"How do you build a continuously learning, context-aware personal AI that maintains long-term memory, performs multi-step reasoning, and runs entirely on consumer-grade hardware (4GB VRAM)?"**
+> **"How do you build a continuously learning, context-aware personal AI that maintains long-term memory, performs multi-step reasoning, and runs entirely on consumer-grade hardware (20GB VRAM)?"**
 
 This is not a simple RAG problem—it requires:
 1. **Persistent Memory Architecture** (not just vector databases)
@@ -465,14 +465,14 @@ Fusion: Reciprocal Rank Fusion (RRF)
 
 #### **Quantization**: 4-bit via bitsandbytes
 - Reduces memory footprint to ~1.5GB
-- Enables running on 4GB VRAM GPUs
+- Enables running on 20GB VRAM GPUs
 - Minimal accuracy loss (<2%)
 
 #### **Fine-Tuning**: LoRA (Low-Rank Adaptation)
 - Parameter-efficient: only train 0.5% of weights
 - Adapts to user's communication style
 - Training dataset: user's past conversations
-- Fine-tuning time: ~2-3 hours on GTX 1650
+- Fine-tuning time: ~2-3 hours on RTX 4000 Ada Generation
 
 **Training Process:**
 ```python
@@ -489,7 +489,7 @@ lora_config = LoraConfig(
     task_type="CAUSAL_LM"
 )
 
-# Fine-tune on GTX 1650 (4GB VRAM)
+# Fine-tune on RTX 4000 Ada Generation (20GB VRAM)
 trainer = SFTTrainer(
     model=base_model,
     args=training_args,
@@ -498,7 +498,7 @@ trainer = SFTTrainer(
     max_seq_length=512
 )
 
-trainer.train()  # 2-3 hours on GTX 1650
+trainer.train()  # 2-3 hours on RTX 4000 Ada Generation
 ```
 
 ### 4.6 Memory Consolidation & Compression
@@ -757,10 +757,10 @@ Query-Response Cycle → Log (query, results, scores, feedback)
 
 ### 7.1 Hardware Requirements
 
-#### **Minimum Configuration** (Target: GTX 1650, 4GB VRAM)
+#### **Minimum Configuration** (Target: RTX 4000 Ada Generation, 20GB VRAM)
 | Component | Specification | Usage |
 |-----------|---------------|-------|
-| **GPU** | NVIDIA GTX 1650 (4GB VRAM) | Model inference (quantized) |
+| **GPU** | NVIDIA RTX 4000 Ada Generation (20GB VRAM) | Model inference (quantized) |
 | **CPU** | Intel i5 / AMD Ryzen 5 | Retrieval, embedding |
 | **RAM** | 8GB | System + model + data |
 | **Storage** | 20GB SSD | Models + memories + indices |
@@ -796,7 +796,7 @@ Whisper (faster-whisper)
 | **Classifiers** | SetFit + DistilBERT | ~50MB total | Fast classification (<50ms) |
 | **Sparse** | SPLADE | CPU only | Learned sparse expansion |
 
-**Total VRAM at runtime**: ~1.5GB (leaving ~2.5GB headroom on GTX 1650)
+**Total VRAM at runtime**: ~1.5GB (leaving ~18.5GB headroom on RTX 4000 Ada Generation)
 **Total Disk**: ~4GB models + data
 
 #### **Backend Stack**
@@ -922,7 +922,7 @@ Whisper (faster-whisper)
 - [ ] Train on user's conversation style
 - [ ] Evaluate before/after fine-tuning
 
-**Milestone 4**: Fine-tuned model runs on GTX 1650 with <3s inference.
+**Milestone 4**: Fine-tuned model runs on RTX 4000 Ada Generation with <3s inference.
 
 ---
 
