@@ -57,18 +57,19 @@ class TimelineAgent(BaseAgent):
         evidence_text = self._format_evidence(results, max_items=8)
 
         # Generate timeline narrative
-        prompt = f"""You are an AI memory assistant. Based on the user's memories below, 
+        prompt = f"""You are Cortex Lab, an AI memory assistant. Based on the user's stored memories below,
 provide a chronological narrative answering the question.
 
 Focus on the timeline, sequence of events, and temporal patterns.
-If there's not enough context, say so honestly.
+If there are no relevant memories or insufficient context, honestly say so — never fabricate information.
+Keep your answer concise and focused.
 
 Question: {query.raw_query}
 
 Memories (chronological):
 {evidence_text}
 
-Answer (narrative format):"""
+Answer:"""
 
         answer = self.llm.generate(prompt, max_tokens=400, temperature=0.3)
 
@@ -96,8 +97,8 @@ class CausalAgent(BaseAgent):
 
         evidence_text = self._format_evidence(results, max_items=8)
 
-        prompt = f"""You are an AI memory assistant specialized in causal reasoning.
-Analyze the user's memories to find cause-and-effect relationships.
+        prompt = f"""You are Cortex Lab, an AI memory assistant specialized in causal reasoning.
+Analyze the user's stored memories to find cause-and-effect relationships.
 
 For the question below, identify:
 1. The main event/decision
@@ -105,14 +106,15 @@ For the question below, identify:
 3. What resulted from it (consequences, effects)
 
 If you can trace a causal chain, present it step by step.
-If there's insufficient evidence, say so honestly.
+If there's insufficient evidence, honestly say so — never fabricate information.
+Keep your answer concise and focused.
 
 Question: {query.raw_query}
 
 Relevant Memories:
 {evidence_text}
 
-Causal Analysis:"""
+Answer:"""
 
         answer = self.llm.generate(prompt, max_tokens=500, temperature=0.3)
 
@@ -143,20 +145,23 @@ class ReflectionAgent(BaseAgent):
 
         evidence_text = self._format_evidence(results, max_items=10)
 
-        prompt = f"""You are an AI memory assistant specializing in self-reflection and pattern analysis.
-Analyze the user's memories to identify:
+        prompt = f"""You are Cortex Lab, an AI memory assistant specializing in self-reflection and pattern analysis.
+Analyze the user's stored memories to identify:
 
 1. How their thinking/beliefs evolved over time
 2. Recurring patterns or themes
 3. Key turning points or realizations
 4. Contradictions or changes in stance
 
+If there are no relevant memories, honestly say so — never fabricate information.
+Keep your answer concise and focused.
+
 Question: {query.raw_query}
 
 Memories (chronological):
 {evidence_text}
 
-Reflection Analysis:"""
+Answer:"""
 
         answer = self.llm.generate(prompt, max_tokens=500, temperature=0.3)
 
@@ -207,15 +212,17 @@ class PlanningAgent(BaseAgent):
         # Synthesize final answer
         combined_context = "\n\n".join(sub_answers) if sub_answers else "No sub-answers generated."
 
-        prompt = f"""You are an AI memory assistant. The following sub-questions were answered 
-from the user's memories. Synthesize a comprehensive final answer.
+        prompt = f"""You are Cortex Lab, an AI memory assistant. The following sub-questions were answered
+from the user's stored memories. Synthesize a comprehensive final answer.
+If there are no relevant memories, honestly say so — never fabricate information.
+Keep your answer concise and focused.
 
 Original Question: {query.raw_query}
 
 Sub-Question Answers:
 {combined_context}
 
-Synthesized Answer:"""
+Answer:"""
 
         answer = self.llm.generate(prompt, max_tokens=500, temperature=0.3)
 
@@ -252,8 +259,8 @@ class ArbitrationAgent(BaseAgent):
 
         evidence_text = self._format_evidence(results, max_items=8)
 
-        prompt = f"""You are an AI memory assistant specializing in resolving conflicts 
-and contradictions in the user's memories.
+        prompt = f"""You are Cortex Lab, an AI memory assistant specializing in resolving conflicts
+and contradictions in the user's stored memories.
 
 Analyze the memories below and:
 1. Identify any contradicting information
@@ -261,12 +268,15 @@ Analyze the memories below and:
 3. Explain the evolution from old belief to new belief
 4. If no contradiction exists, explain the consistent thread
 
+If there are no relevant memories, honestly say so — never fabricate information.
+Keep your answer concise and focused.
+
 Question: {query.raw_query}
 
 Memories:
 {evidence_text}
 
-Analysis:"""
+Answer:"""
 
         answer = self.llm.generate(prompt, max_tokens=400, temperature=0.3)
 

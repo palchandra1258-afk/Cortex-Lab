@@ -5,8 +5,25 @@ Used by agents and retrieval pipeline for all LLM calls.
 """
 
 import time
+import re
 from typing import Optional
 import torch
+
+# Stop patterns that indicate the model is hallucinating new turns
+_LLM_STOP_PATTERNS = [
+    "\nUser:", "\nuser:", "\nHuman:", "\nhuman:",
+    "\nQ:", "\nA:", "\n\nUser ", "\nQuestion:",
+]
+
+
+def _truncate_at_stop(text: str) -> str:
+    """Truncate at the first occurrence of any stop pattern."""
+    earliest = len(text)
+    for pattern in _LLM_STOP_PATTERNS:
+        pos = text.find(pattern)
+        if pos != -1 and pos < earliest:
+            earliest = pos
+    return text[:earliest].strip()
 
 
 class LocalLLM:
@@ -35,7 +52,7 @@ class LocalLLM:
     def generate(self, prompt: str, max_tokens: int = 512,
                  temperature: float = 0.3, top_p: float = 0.9,
                  stop_sequences: Optional[list] = None) -> str:
-        """Generate text from the model."""
+        """Generate text from the model with stop-pattern safety."""
         if self.model is None or self.tokenizer is None:
             return self._fallback_generate(prompt)
 
@@ -45,14 +62,26 @@ class LocalLLM:
 
         input_len = inputs["input_ids"].shape[-1]
 
+        # Build stop token IDs
+        eos_ids = [self.tokenizer.eos_token_id]
+        for stop_str in ["User:", "<|im_end|>", "<|endoftext|>"]:
+            try:
+                ids = self.tokenizer.encode(stop_str, add_special_tokens=False)
+                if ids:
+                    eos_ids.append(ids[0])
+            except Exception:
+                pass
+
         with torch.no_grad():
             outputs = self.model.generate(
                 **inputs,
-                max_new_tokens=max_tokens,
+                max_new_tokens=min(max_tokens, 1024),
                 temperature=max(temperature, 0.01),
                 top_p=top_p,
                 do_sample=temperature > 0,
                 pad_token_id=self.tokenizer.eos_token_id,
+                eos_token_id=eos_ids,
+                repetition_penalty=1.2,
             )
 
         generated = self.tokenizer.decode(
@@ -65,11 +94,14 @@ class LocalLLM:
             if think_end > -1:
                 generated = generated[think_end + len("</think>"):].strip()
 
-        # Apply stop sequences
+        # Apply custom stop sequences
         if stop_sequences:
             for seq in stop_sequences:
                 if seq in generated:
                     generated = generated[:generated.index(seq)]
+
+        # Always truncate at hallucinated conversation continuations
+        generated = _truncate_at_stop(generated)
 
         self._call_count += 1
         self._total_tokens += input_len + len(self.tokenizer.encode(generated))

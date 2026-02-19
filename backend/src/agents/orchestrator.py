@@ -107,7 +107,16 @@ class AgentOrchestrator:
         print("  ⚡ Routing: NO_RETRIEVAL (simple query)")
 
         answer = self.llm.generate(
-            f"Answer the following question concisely:\n\n{query.raw_query}\n\nAnswer:",
+            f"""You are Cortex Lab, a personal AI memory and reasoning assistant.
+Answer the following question concisely.
+If this is a personal question about the user (their name, age, preferences, etc.)
+and you don't have stored memories about it, honestly say you don't have that
+information yet and suggest they tell you so you can remember it.
+Never fabricate personal details.
+
+Question: {query.raw_query}
+
+Answer:""",
             max_tokens=300, temperature=0.3
         )
 
@@ -183,8 +192,8 @@ class AgentOrchestrator:
             all_traces.append(f"{name}: {resp.reasoning_trace}")
 
         # LLM synthesis of multi-agent output
-        synthesis_prompt = f"""You are an AI assistant synthesizing information from multiple 
-analysis perspectives about the user's memories.
+        synthesis_prompt = f"""You are Cortex Lab, a personal AI memory assistant synthesizing information from multiple
+analysis perspectives about the user's stored memories.
 
 Question: {query.raw_query}
 
@@ -192,9 +201,10 @@ Agent Analyses:
 {chr(10).join(combined_answers)}
 
 Provide a unified, comprehensive answer that combines insights from all analyses.
-Be concise but thorough.
+Be concise but thorough. If there are no relevant memories, say so honestly.
+Never fabricate information.
 
-Synthesized Answer:"""
+Answer:"""
 
         final_answer = self.llm.generate(synthesis_prompt, max_tokens=500, temperature=0.3)
 

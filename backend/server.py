@@ -200,9 +200,41 @@ class MemorySearchRequest(BaseModel):
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
+SYSTEM_PROMPT = (
+    "You are Cortex Lab, a personal AI memory and reasoning assistant. "
+    "You help the user by answering their questions thoughtfully and concisely. "
+    "If the user asks about personal information (their name, preferences, etc.) "
+    "that you don't actually know, honestly say you don't have that information yet "
+    "and suggest they can teach you by telling you. "
+    "Never fabricate personal details about the user. "
+    "Keep responses focused and do NOT generate follow-up questions or continue "
+    "the conversation on behalf of the user."
+)
+
+# Stop patterns: if the model starts generating these, it's hallucinating a new turn
+_STOP_PATTERNS = ["\nUser:", "\nuser:", "\nHuman:", "\nhuman:", "\nQ:", "\nA:", "\n\nUser "]
+
+
 def _build_prompt(messages: list[ChatMessage]) -> str:
-    """Build a plain prompt from the chat history."""
-    parts: list[str] = []
+    """
+    Build a prompt using the tokenizer's chat template when available.
+    Falls back to a structured format with system prompt and stop boundaries.
+    """
+    # Try to use the model's native chat template (best for DeepSeek-R1)
+    if tokenizer is not None:
+        try:
+            chat_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+            for m in messages:
+                chat_messages.append({"role": m.role, "content": m.content})
+            prompt = tokenizer.apply_chat_template(
+                chat_messages, tokenize=False, add_generation_prompt=True
+            )
+            return prompt
+        except Exception:
+            pass  # Fall back to manual format
+
+    # Fallback: structured prompt with clear boundaries
+    parts: list[str] = [f"System: {SYSTEM_PROMPT}"]
     for m in messages:
         if m.role == "user":
             parts.append(f"User: {m.content}")
@@ -212,10 +244,29 @@ def _build_prompt(messages: list[ChatMessage]) -> str:
     return "\n\n".join(parts)
 
 
+def _truncate_at_stop_patterns(text: str) -> str:
+    """
+    Truncate generated text at the first occurrence of any stop pattern.
+    This prevents the model from hallucinating new conversation turns.
+    """
+    earliest_pos = len(text)
+    for pattern in _STOP_PATTERNS:
+        pos = text.find(pattern)
+        if pos != -1 and pos < earliest_pos:
+            earliest_pos = pos
+    return text[:earliest_pos].strip()
+
+
 def _split_thinking(text: str):
-    """Separate <think>…</think> reasoning from visible answer."""
+    """
+    Separate <think>…</think> reasoning from visible answer.
+    Works with both raw special-token output and clean text.
+    DeepSeek-R1 format: generation starts with <think>\n...reasoning...</think>answer
+    """
     thinking = None
     content  = text
+
+    # The generation prompt already contains <think>\n so output starts with thinking content
     if "<think>" in text:
         start = text.index("<think>") + len("<think>")
         if "</think>" in text:
@@ -223,8 +274,18 @@ def _split_thinking(text: str):
             thinking = text[start:end].strip()
             content  = text[end + len("</think>"):].strip()
         else:
+            # Model never closed the think tag — everything is thinking, no content
             thinking = text[start:].strip()
             content  = ""
+    elif "</think>" in text:
+        # Generation started inside <think> (prompt already had <think>\n)
+        end = text.index("</think>")
+        thinking = text[:end].strip()
+        content  = text[end + len("</think>"):].strip()
+
+    # Truncate hallucinated continuations from the visible content
+    if content:
+        content = _truncate_at_stop_patterns(content)
     return thinking, content
 
 # ── Routes ───────────────────────────────────────────────────────────────────
@@ -253,30 +314,55 @@ async def chat(req: ChatRequest):
         )
 
     # ── Non-streaming ────────────────────────────────────────────────────
-    inputs = tokenizer(prompt, return_tensors="pt")
+    inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=4096)
     if torch.cuda.is_available():
         inputs = {k: v.cuda() for k, v in inputs.items()}
 
     input_len = inputs["input_ids"].shape[-1]
 
+    # Build stop token IDs to prevent runaway generation
+    stop_token_ids = [tokenizer.eos_token_id]
+    # Try to add common stop tokens
+    for stop_str in ["User:", "<|im_end|>", "<|endoftext|>"]:
+        try:
+            ids = tokenizer.encode(stop_str, add_special_tokens=False)
+            if ids:
+                stop_token_ids.append(ids[0])
+        except Exception:
+            pass
+
     with torch.no_grad():
         out = model.generate(
             **inputs,
-            max_new_tokens=req.max_tokens,
+            max_new_tokens=min(req.max_tokens, 1024),
             temperature=max(req.temperature, 0.01),
             top_p=req.top_p,
             do_sample=req.temperature > 0,
             pad_token_id=tokenizer.eos_token_id,
+            eos_token_id=stop_token_ids,
+            repetition_penalty=1.2,
         )
 
-    generated = tokenizer.decode(out[0][input_len:], skip_special_tokens=True).strip()
-    thinking, content = _split_thinking(generated)
+    # Decode with special tokens to extract <think>...</think>
+    raw_output = tokenizer.decode(out[0][input_len:], skip_special_tokens=False).strip()
+    thinking, content = _split_thinking(raw_output)
+
+    # Clean up special tokens from content
+    if content:
+        # Remove any remaining special tokens
+        for tok in ["<｜end▁of▁sentence｜>", "<|im_end|>", "<|endoftext|>", "<｜User｜>", "<｜Assistant｜>"]:
+            content = content.replace(tok, "")
+        content = _truncate_at_stop_patterns(content.strip())
+    if thinking:
+        for tok in ["<｜end▁of▁sentence｜>", "<|im_end|>", "<|endoftext|>", "<｜User｜>", "<｜Assistant｜>"]:
+            thinking = thinking.replace(tok, "")
+        thinking = thinking.strip()
 
     return ChatResponse(
         id=f"msg-{uuid.uuid4().hex[:12]}",
         model=MODEL_NAME,
         created=int(time.time()),
-        content=content or generated,
+        content=content or "I'm not sure how to respond to that.",
         thinking=thinking,
         usage={
             "prompt_tokens": input_len,
@@ -287,20 +373,32 @@ async def chat(req: ChatRequest):
 
 
 async def _stream_generate(prompt: str, req: ChatRequest):
-    """Yield Server-Sent Events token by token."""
-    inputs = tokenizer(prompt, return_tensors="pt")
+    """Yield Server-Sent Events token by token with stop-pattern detection."""
+    inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=4096)
     if torch.cuda.is_available():
         inputs = {k: v.cuda() for k, v in inputs.items()}
 
     streamer = TextIteratorStreamer(tokenizer, skip_prompt=True, skip_special_tokens=True)
 
+    # Build stop token IDs
+    stop_token_ids = [tokenizer.eos_token_id]
+    for stop_str in ["User:", "<|im_end|>", "<|endoftext|>"]:
+        try:
+            ids = tokenizer.encode(stop_str, add_special_tokens=False)
+            if ids:
+                stop_token_ids.append(ids[0])
+        except Exception:
+            pass
+
     gen_kwargs = {
         **inputs,
-        "max_new_tokens": req.max_tokens,
+        "max_new_tokens": min(req.max_tokens, 1024),
         "temperature": max(req.temperature, 0.01),
         "top_p": req.top_p,
         "do_sample": req.temperature > 0,
         "pad_token_id": tokenizer.eos_token_id,
+        "eos_token_id": stop_token_ids,
+        "repetition_penalty": 1.2,
         "streamer": streamer,
     }
 
@@ -308,11 +406,27 @@ async def _stream_generate(prompt: str, req: ChatRequest):
     thread.start()
 
     msg_id = f"msg-{uuid.uuid4().hex[:12]}"
+    accumulated = ""  # Track full text to detect stop patterns mid-stream
 
     for token_text in streamer:
+        accumulated += token_text
+        # Check if we've hit a stop pattern in the accumulated text
+        should_stop = False
+        for pattern in _STOP_PATTERNS:
+            if pattern in accumulated:
+                # Send only the part before the stop pattern
+                safe_part = accumulated[:accumulated.index(pattern)]
+                leftover = safe_part[len(accumulated) - len(token_text):]
+                if leftover:
+                    chunk = {"id": msg_id, "delta": leftover}
+                    yield f"data: {json.dumps(chunk)}\n\n"
+                should_stop = True
+                break
+        if should_stop:
+            break
         chunk = {"id": msg_id, "delta": token_text}
         yield f"data: {json.dumps(chunk)}\n\n"
-        await asyncio.sleep(0)  # yield control so FastAPI can flush
+        await asyncio.sleep(0)
 
     yield f"data: {json.dumps({'id': msg_id, 'delta': '', 'done': True})}\n\n"
     thread.join()
