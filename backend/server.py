@@ -424,6 +424,22 @@ async def get_entities(limit: int = Query(100, ge=1, le=1000)):
     return {"entities": rag_engine.get_entities(limit=limit)}
 
 
+@app.get("/api/beliefs")
+async def get_belief_deltas(limit: int = Query(50, ge=1, le=200)):
+    """Get detected belief evolution events."""
+    if not rag_engine.initialized:
+        raise HTTPException(503, "RAG engine not ready.")
+    return {"beliefs": rag_engine.get_belief_deltas(limit=limit)}
+
+
+@app.get("/api/communities")
+async def get_communities():
+    """Get GraphRAG community summaries."""
+    if not rag_engine.initialized:
+        raise HTTPException(503, "RAG engine not ready.")
+    return {"communities": rag_engine.get_community_summaries()}
+
+
 # ── RAG System Stats ────────────────────────────────────────────────────────
 
 @app.get("/api/rag/stats")

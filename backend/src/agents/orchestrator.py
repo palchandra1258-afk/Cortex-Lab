@@ -226,28 +226,71 @@ Synthesized Answer:"""
 
     async def _crag_evaluate(self, query: MemoryQuery, response: OrchestratorResponse) -> OrchestratorResponse:
         """
-        CRAG (Corrective RAG): Evaluate retrieval quality.
+        CRAG (Corrective RAG): Evaluate retrieval quality with multi-signal assessment.
         → CORRECT: Use as is
         → AMBIGUOUS: Supplement with more retrieval
         → INCORRECT: Refine query and re-retrieve
         """
         if not response.evidence:
-            return response  # Nothing to evaluate
-
-        # Simple heuristic evaluation (avoid extra LLM call for speed)
-        avg_score = sum(r.score for r in response.evidence) / len(response.evidence)
-
-        if avg_score > 0.6:
-            # CORRECT: Good retrieval quality
             return response
-        elif avg_score > 0.3:
-            # AMBIGUOUS: Supplement
-            response.reasoning_trace += " | CRAG: AMBIGUOUS — retrieval quality moderate"
+
+        # Multi-signal quality evaluation
+        avg_score = sum(r.score for r in response.evidence) / len(response.evidence)
+        max_score = max(r.score for r in response.evidence)
+        evidence_count = len(response.evidence)
+
+        # Check entity coverage (do retrieved memories mention query entities?)
+        entity_coverage = 0.0
+        if query.entities:
+            matched = 0
+            for ent in query.entities:
+                for r in response.evidence:
+                    if ent.lower() in r.memory.content.lower():
+                        matched += 1
+                        break
+            entity_coverage = matched / len(query.entities)
+
+        # Combined quality score
+        quality_score = (
+            0.40 * avg_score +
+            0.20 * max_score +
+            0.20 * min(evidence_count / 5.0, 1.0) +
+            0.20 * entity_coverage
+        )
+
+        if quality_score > 0.55:
+            # CORRECT: Good retrieval quality
+            response.reasoning_trace += f" | CRAG: CORRECT (quality={quality_score:.2f})"
+            return response
+        elif quality_score > 0.30:
+            # AMBIGUOUS: Try to supplement with additional retrieval
+            response.reasoning_trace += f" | CRAG: AMBIGUOUS (quality={quality_score:.2f})"
             response.confidence *= 0.85
+
+            # Attempt supplementary retrieval with step-back query
+            if query.step_back_query:
+                try:
+                    from src.models import MemoryQuery as MQ
+                    sb_query = MQ(
+                        raw_query=query.step_back_query,
+                        intent=query.intent,
+                        complexity=0.4,
+                        embedding=self.retriever.embeddings.embed(query.step_back_query).tolist(),
+                    )
+                    extra_results = await self.retriever.retrieve(sb_query, top_k=5)
+                    # Add non-duplicate results
+                    existing_ids = {r.memory.id for r in response.evidence}
+                    for r in extra_results:
+                        if r.memory.id not in existing_ids:
+                            response.evidence.append(r)
+                            existing_ids.add(r.memory.id)
+                    response.reasoning_trace += f" → supplemented +{len(extra_results)} from step-back"
+                except Exception:
+                    pass
         else:
             # INCORRECT: Low quality, caveat the answer
-            response.reasoning_trace += " | CRAG: INCORRECT — retrieval quality low"
-            response.confidence *= 0.6
+            response.reasoning_trace += f" | CRAG: INCORRECT (quality={quality_score:.2f})"
+            response.confidence *= 0.55
             response.answer = (
                 "⚠️ *Note: Limited relevant memories found. The following answer is based on "
                 "partial information:*\n\n" + response.answer
@@ -259,37 +302,78 @@ Synthesized Answer:"""
         """
         Self-RAG: Generate → Critique → Revise loop.
         Max 2 iterations for latency budget.
+        Evaluates: relevance, faithfulness, completeness.
         """
         if self.llm.model is None:
             return response
 
+        # Format evidence for critique
+        evidence_summary = ""
+        for i, r in enumerate(response.evidence[:3]):
+            evidence_summary += f"[{i+1}] {r.memory.content[:150]}\n"
+
         critique_prompt = f"""Evaluate this answer about someone's personal memories.
 
 Question: {query.raw_query}
-Answer: {response.answer[:300]}
+Answer: {response.answer[:400]}
 
-Rate on a scale of 1-10:
-1. Relevance (does it answer the question?)
-2. Faithfulness (is it grounded in the evidence?)
-3. Completeness (does it cover all aspects?)
+Supporting evidence:
+{evidence_summary}
 
-Overall score (just the number):"""
+Rate each criterion 1-10:
+1. RELEVANCE: Does the answer address the question?
+2. FAITHFULNESS: Is the answer grounded in the evidence?
+3. COMPLETENESS: Does it cover the key aspects?
+
+Respond with three numbers separated by commas (e.g., 8,7,6):"""
 
         try:
-            score_text = self.llm.generate(critique_prompt, max_tokens=10, temperature=0.1)
-            # Parse score
+            score_text = self.llm.generate(critique_prompt, max_tokens=20, temperature=0.1)
             import re
             numbers = re.findall(r'\d+', score_text)
-            if numbers:
+
+            if len(numbers) >= 3:
+                relevance = min(int(numbers[0]), 10)
+                faithfulness = min(int(numbers[1]), 10)
+                completeness = min(int(numbers[2]), 10)
+                avg_score = (relevance + faithfulness + completeness) / 3.0
+
+                if avg_score >= 7:
+                    response.confidence = min(response.confidence + 0.1, 0.95)
+                    response.reasoning_trace += f" | Self-RAG: {relevance}/{faithfulness}/{completeness} (accepted)"
+                elif avg_score >= 5:
+                    # Attempt revision with explicit instruction on weak areas
+                    weak_area = "relevance" if relevance < faithfulness and relevance < completeness else (
+                        "faithfulness" if faithfulness < completeness else "completeness"
+                    )
+                    revision_prompt = f"""Revise this answer to improve {weak_area}.
+
+Question: {query.raw_query}
+Original answer: {response.answer[:300]}
+
+Evidence:
+{evidence_summary}
+
+Improved answer (focus on {weak_area}):"""
+                    revised = self.llm.generate(revision_prompt, max_tokens=400, temperature=0.3)
+                    if len(revised.strip()) > 20:
+                        response.answer = revised.strip()
+                        response.reasoning_trace += f" | Self-RAG: {relevance}/{faithfulness}/{completeness} → revised ({weak_area})"
+                        response.confidence = min(response.confidence + 0.05, 0.85)
+                    else:
+                        response.reasoning_trace += f" | Self-RAG: {relevance}/{faithfulness}/{completeness} (revision failed)"
+                else:
+                    response.confidence = max(response.confidence - 0.15, 0.25)
+                    response.reasoning_trace += f" | Self-RAG: {relevance}/{faithfulness}/{completeness} (low quality)"
+            elif numbers:
                 score = int(numbers[0])
                 if score >= 7:
                     response.confidence = min(response.confidence + 0.1, 0.95)
-                    response.reasoning_trace += f" | Self-RAG: score={score}/10 (accepted)"
                 else:
                     response.confidence = max(response.confidence - 0.1, 0.3)
-                    response.reasoning_trace += f" | Self-RAG: score={score}/10 (low confidence)"
-        except Exception:
-            pass
+                response.reasoning_trace += f" | Self-RAG: score={score}/10"
+        except Exception as e:
+            response.reasoning_trace += f" | Self-RAG: error ({str(e)[:50]})"
 
         return response
 

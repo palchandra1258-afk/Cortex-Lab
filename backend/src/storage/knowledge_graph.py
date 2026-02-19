@@ -167,16 +167,105 @@ class KnowledgeGraph:
         return []
 
     def find_entity_by_name(self, name: str) -> Optional[str]:
-        """Find entity ID by canonical name or alias."""
+        """Find entity ID by canonical name, alias, or fuzzy match."""
         if self.graph is not None:
             name_lower = name.lower()
+
+            # Stage 1: Exact match on canonical name
             for node_id, data in self.graph.nodes(data=True):
                 if data.get("canonical_name", "").lower() == name_lower:
                     return node_id
+
+            # Stage 2: Exact match on aliases
+            for node_id, data in self.graph.nodes(data=True):
                 for alias in data.get("aliases", []):
                     if alias.lower() == name_lower:
                         return node_id
+
+            # Stage 3: Fuzzy matching (prefix/substring for short queries)
+            best_match = None
+            best_score = 0.0
+            for node_id, data in self.graph.nodes(data=True):
+                canonical = data.get("canonical_name", "").lower()
+                # Substring match
+                if name_lower in canonical or canonical in name_lower:
+                    score = len(min(name_lower, canonical, key=len)) / max(len(name_lower), len(canonical), 1)
+                    if score > 0.6 and score > best_score:
+                        best_score = score
+                        best_match = node_id
+                # Character-level similarity (simplified Jaro-like)
+                else:
+                    common = sum(1 for c in name_lower if c in canonical)
+                    score = (2.0 * common) / (len(name_lower) + len(canonical) + 1e-10)
+                    if score > 0.75 and score > best_score:
+                        best_score = score
+                        best_match = node_id
+
+            if best_match:
+                # Auto-add as alias for faster future lookups
+                node = self.graph.nodes[best_match]
+                aliases = node.get("aliases", [])
+                if name not in aliases:
+                    aliases.append(name)
+                    node["aliases"] = aliases
+                return best_match
+
         return None
+
+    def merge_entities(self, keep_id: str, merge_id: str):
+        """Merge two entity nodes (merge_id → keep_id)."""
+        if self.graph is None or keep_id not in self.graph or merge_id not in self.graph:
+            return
+
+        keep_node = self.graph.nodes[keep_id]
+        merge_node = self.graph.nodes[merge_id]
+
+        # Merge aliases
+        existing_aliases = keep_node.get("aliases", [])
+        merge_aliases = merge_node.get("aliases", [])
+        merge_name = merge_node.get("canonical_name", "")
+        all_aliases = list(set(existing_aliases + merge_aliases + ([merge_name] if merge_name else [])))
+        keep_node["aliases"] = all_aliases
+
+        # Merge memory_ids
+        keep_mids = set(keep_node.get("memory_ids", []))
+        merge_mids = merge_node.get("memory_ids", [])
+        keep_node["memory_ids"] = list(keep_mids | set(merge_mids))
+
+        # Redirect edges
+        for pred in list(self.graph.predecessors(merge_id)):
+            edge_data = dict(self.graph[pred][merge_id])
+            if not self.graph.has_edge(pred, keep_id):
+                self.graph.add_edge(pred, keep_id, **edge_data)
+        for succ in list(self.graph.successors(merge_id)):
+            edge_data = dict(self.graph[merge_id][succ])
+            if not self.graph.has_edge(keep_id, succ):
+                self.graph.add_edge(keep_id, succ, **edge_data)
+
+        # Remove merged node
+        self.graph.remove_node(merge_id)
+
+    def get_community_summaries(self) -> List[Dict]:
+        """Get community clusters with entity names (GraphRAG-style)."""
+        communities = self.get_communities()
+        summaries = []
+        for i, community in enumerate(communities):
+            members = []
+            for node_id in community:
+                if node_id in self.graph:
+                    members.append(self.graph.nodes[node_id].get("canonical_name", node_id[:8]))
+            all_mids = set()
+            for node_id in community:
+                if node_id in self.graph:
+                    all_mids.update(self.graph.nodes[node_id].get("memory_ids", []))
+            summaries.append({
+                "community_id": i,
+                "members": members,
+                "size": len(community),
+                "memory_count": len(all_mids),
+                "memory_ids": list(all_mids)[:20],
+            })
+        return summaries
 
     def get_communities(self) -> List[List[str]]:
         """Detect communities using greedy modularity."""

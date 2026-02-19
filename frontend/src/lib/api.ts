@@ -192,9 +192,44 @@ export async function getGraphData(): Promise<GraphData> {
   return res.json();
 }
 
-export async function getEntities(): Promise<{ entities: any[] }> {
+export async function getEntities(): Promise<{ entities: Record<string, unknown>[] }> {
   const res = await fetch(`${API_BASE}/entities`);
   if (!res.ok) throw new Error(`Failed to fetch entities: ${res.status}`);
+  return res.json();
+}
+
+// ── Belief Evolution ────────────────────────────────────────────
+
+export async function getBeliefDeltas(
+  limit: number = 50,
+): Promise<{
+  beliefs: {
+    id: string;
+    topic: string;
+    old_belief_text: string;
+    new_belief_text: string;
+    change_type: string;
+    confidence: number;
+    detected_at: string;
+  }[];
+}> {
+  const res = await fetch(`${API_BASE}/beliefs?limit=${limit}`);
+  if (!res.ok) throw new Error(`Failed to fetch beliefs: ${res.status}`);
+  return res.json();
+}
+
+// ── GraphRAG Communities ────────────────────────────────────────
+
+export async function getCommunities(): Promise<{
+  communities: {
+    community_id: number;
+    members: string[];
+    size: number;
+    memory_count: number;
+  }[];
+}> {
+  const res = await fetch(`${API_BASE}/communities`);
+  if (!res.ok) throw new Error(`Failed to fetch communities: ${res.status}`);
   return res.json();
 }
 

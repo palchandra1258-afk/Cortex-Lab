@@ -125,6 +125,12 @@ class CortexRAGEngine:
         )
         self.cache = MultiLevelCache(self.embedding_model)
 
+        # Run tier migration on startup
+        try:
+            self.vector_store.migrate_tiers()
+        except Exception as e:
+            print(f"  ⚠ Tier migration skipped: {e}")
+
         self.initialized = True
         elapsed = time.time() - t0
         print(f"\n  ✅ RAG Engine ready in {elapsed:.1f}s")
@@ -175,6 +181,9 @@ class CortexRAGEngine:
             source="chat",
             session_context=session_context,
         )
+
+        # Invalidate retriever caches after new ingestion
+        self.hybrid_retriever.invalidate_caches()
 
         # 2. Check cache
         cached, cache_level = self.cache.get(user_message)
@@ -246,8 +255,9 @@ class CortexRAGEngine:
             content=content, session_id=session_id, source=source
         )
 
-        # Invalidate cache (new memory might change future answers)
+        # Invalidate caches (new memory might change future answers)
         self.cache.invalidate_topic(memory.topics[0] if memory.topics else "")
+        self.hybrid_retriever.invalidate_caches()
 
         return memory.to_dict()
 
@@ -295,6 +305,21 @@ class CortexRAGEngine:
         if not self.initialized:
             return []
         return self.metadata_store.get_entities(limit=limit)
+
+    def get_belief_deltas(self, limit: int = 50) -> List[Dict]:
+        """Get detected belief evolution events."""
+        if not self.initialized:
+            return []
+        try:
+            return self.metadata_store.get_belief_deltas(limit=limit)
+        except Exception:
+            return []
+
+    def get_community_summaries(self) -> List[Dict]:
+        """Get GraphRAG community summaries."""
+        if not self.initialized:
+            return []
+        return self.knowledge_graph.get_community_summaries()
 
     # ─── System Stats ────────────────────────────────────────────────────
 
