@@ -8,3 +8,11 @@ bitsandbytes>=0.41.0
 sentencepiece>=0.1.99
 protobuf>=3.20.0
 safetensors>=0.4.0
+
+# RAG System Dependencies
+sentence-transformers>=2.2.0
+faiss-cpu>=1.7.4
+duckdb>=0.9.0
+networkx>=3.0
+numpy>=1.24.0
+scikit-learn>=1.3.0

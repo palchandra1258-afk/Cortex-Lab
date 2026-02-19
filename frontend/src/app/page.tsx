@@ -4,7 +4,12 @@ import { useState, useEffect } from "react";
 import { ChatPanel } from "@/components/ChatPanel";
 import { Sidebar } from "@/components/Sidebar";
 import { Header } from "@/components/Header";
+import { MemoryBrowser } from "@/components/MemoryBrowser";
+import { KnowledgeGraph } from "@/components/KnowledgeGraph";
+import { RAGDashboard } from "@/components/RAGDashboard";
 import { ModelStatus } from "@/lib/types";
+
+type ActiveView = "chat" | "memories" | "graph" | "dashboard";
 
 export default function Home() {
   const [modelStatus, setModelStatus] = useState<ModelStatus>({
@@ -13,6 +18,7 @@ export default function Home() {
     model_info: {},
   });
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [activeView, setActiveView] = useState<ActiveView>("chat");
   const [conversations, setConversations] = useState<
     { id: string; title: string; date: string }[]
   >([{ id: "1", title: "New Chat", date: new Date().toISOString() }]);
@@ -47,6 +53,7 @@ export default function Home() {
       ...prev,
     ]);
     setActiveConversation(id);
+    setActiveView("chat");
   };
 
   return (
@@ -56,9 +63,14 @@ export default function Home() {
         open={sidebarOpen}
         conversations={conversations}
         activeId={activeConversation}
-        onSelect={setActiveConversation}
+        onSelect={(id) => {
+          setActiveConversation(id);
+          setActiveView("chat");
+        }}
         onNewChat={handleNewChat}
         onToggle={() => setSidebarOpen((p) => !p)}
+        activeView={activeView}
+        onNavigate={setActiveView}
       />
 
       {/* Main Area */}
@@ -68,17 +80,28 @@ export default function Home() {
           sidebarOpen={sidebarOpen}
           onToggleSidebar={() => setSidebarOpen((p) => !p)}
         />
-        <ChatPanel
-          key={activeConversation}
-          modelStatus={modelStatus}
-          onTitleUpdate={(title) =>
-            setConversations((prev) =>
-              prev.map((c) =>
-                c.id === activeConversation ? { ...c, title } : c,
-              ),
-            )
-          }
-        />
+        {activeView === "chat" && (
+          <ChatPanel
+            key={activeConversation}
+            modelStatus={modelStatus}
+            onTitleUpdate={(title) =>
+              setConversations((prev) =>
+                prev.map((c) =>
+                  c.id === activeConversation ? { ...c, title } : c,
+                ),
+              )
+            }
+          />
+        )}
+        {activeView === "memories" && (
+          <MemoryBrowser onBack={() => setActiveView("chat")} />
+        )}
+        {activeView === "graph" && (
+          <KnowledgeGraph onBack={() => setActiveView("chat")} />
+        )}
+        {activeView === "dashboard" && (
+          <RAGDashboard onBack={() => setActiveView("chat")} />
+        )}
       </div>
     </div>
   );

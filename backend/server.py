@@ -1,6 +1,7 @@
 """
 FastAPI Backend Server for Cortex Lab - DeepSeek-R1-1.5B
 Serves the model via REST API + Server-Sent Events (streaming)
+Includes full Agentic RAG system with memory, retrieval, and multi-agent reasoning.
 """
 
 import os
@@ -10,17 +11,21 @@ import json
 import asyncio
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 from contextlib import asynccontextmanager
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, TextIteratorStreamer
 from threading import Thread
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+
+# Add backend dir to path for src imports
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from src.engine import rag_engine
 
 # ── Configuration ────────────────────────────────────────────────────────────
 
@@ -116,9 +121,17 @@ async def lifespan(app: FastAPI):
     print(f"  ✓ Model loaded in {elapsed:.1f}s  ({quant} on {gpu_name})")
     print(f"\n  Server ready → http://{HOST}:{PORT}\n")
 
+    # ── Initialize RAG Engine ────────────────────────────────────────────
+    try:
+        rag_engine.init(model=model, tokenizer=tokenizer)
+    except Exception as e:
+        print(f"  ⚠ RAG Engine initialization error: {e}")
+        print("  ⚠ RAG features will be unavailable, basic chat still works.")
+
     yield  # ← app runs here
 
     # cleanup
+    rag_engine.shutdown()
     del model, tokenizer
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
@@ -164,6 +177,26 @@ class HealthResponse(BaseModel):
     status: str
     model_loaded: bool
     model_info: dict
+
+# ── RAG Schemas ──────────────────────────────────────────────────────────────
+
+class RAGChatRequest(BaseModel):
+    messages: list[ChatMessage]
+    temperature: float = Field(0.6, ge=0.0, le=2.0)
+    top_p: float = Field(0.95, ge=0.0, le=1.0)
+    max_tokens: int = Field(2048, ge=1, le=32768)
+    stream: bool = False
+    use_rag: bool = True  # Enable/disable RAG enhancement
+    session_id: str = ""
+
+class MemoryIngestRequest(BaseModel):
+    content: str
+    source: str = "manual"
+    session_id: str = ""
+
+class MemorySearchRequest(BaseModel):
+    query: str
+    top_k: int = 10
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -283,6 +316,129 @@ async def _stream_generate(prompt: str, req: ChatRequest):
 
     yield f"data: {json.dumps({'id': msg_id, 'delta': '', 'done': True})}\n\n"
     thread.join()
+
+
+# ── RAG-Enhanced Chat ────────────────────────────────────────────────────────
+
+@app.post("/api/rag/chat")
+async def rag_chat(req: RAGChatRequest):
+    """RAG-enhanced chat: uses memory retrieval + multi-agent reasoning."""
+    if not model_loaded:
+        raise HTTPException(503, "Model is still loading.")
+    if not rag_engine.initialized:
+        raise HTTPException(503, "RAG engine is still initializing.")
+
+    user_message = req.messages[-1].content if req.messages else ""
+    if not user_message:
+        raise HTTPException(400, "No message provided.")
+
+    history = [{"role": m.role, "content": m.content} for m in req.messages[:-1]]
+
+    try:
+        result = await rag_engine.rag_chat(
+            user_message=user_message,
+            session_id=req.session_id,
+            conversation_history=history,
+        )
+
+        return {
+            "id": f"rag-{uuid.uuid4().hex[:12]}",
+            "model": MODEL_NAME,
+            "created": int(time.time()),
+            "content": result.get("answer", ""),
+            "thinking": result.get("thinking", ""),
+            "evidence": result.get("evidence", []),
+            "agents_used": result.get("agents_used", []),
+            "confidence": result.get("confidence", 0),
+            "query_analysis": result.get("query_analysis", {}),
+            "processing_time_ms": result.get("processing_time_ms", 0),
+            "cache_hit": result.get("cache_hit", False),
+        }
+    except Exception as e:
+        print(f"  ❌ RAG error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(500, f"RAG processing error: {str(e)}")
+
+
+# ── Memory Management Endpoints ─────────────────────────────────────────────
+
+@app.post("/api/memories/ingest")
+async def ingest_memory(req: MemoryIngestRequest):
+    """Manually ingest a memory into the RAG system."""
+    if not rag_engine.initialized:
+        raise HTTPException(503, "RAG engine not ready.")
+    try:
+        result = await rag_engine.ingest_memory(
+            content=req.content, source=req.source, session_id=req.session_id
+        )
+        return {"status": "ok", "memory": result}
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+@app.get("/api/memories")
+async def get_memories(limit: int = Query(50, ge=1, le=500),
+                       offset: int = Query(0, ge=0)):
+    """Get stored memories with pagination."""
+    if not rag_engine.initialized:
+        raise HTTPException(503, "RAG engine not ready.")
+    memories = rag_engine.get_memories(limit=limit, offset=offset)
+    total = rag_engine.metadata_store.count_memories()
+    return {"memories": memories, "total": total, "limit": limit, "offset": offset}
+
+
+@app.post("/api/memories/search")
+async def search_memories(req: MemorySearchRequest):
+    """Search memories by semantic similarity."""
+    if not rag_engine.initialized:
+        raise HTTPException(503, "RAG engine not ready.")
+    results = rag_engine.search_memories(query=req.query, top_k=req.top_k)
+    return {"results": results, "count": len(results)}
+
+
+@app.delete("/api/memories/{memory_id}")
+async def delete_memory(memory_id: str):
+    """Delete a memory."""
+    if not rag_engine.initialized:
+        raise HTTPException(503, "RAG engine not ready.")
+    success = rag_engine.delete_memory(memory_id)
+    return {"status": "ok" if success else "not_found"}
+
+
+# ── Knowledge Graph Endpoints ────────────────────────────────────────────────
+
+@app.get("/api/graph")
+async def get_graph():
+    """Get knowledge graph data for visualization."""
+    if not rag_engine.initialized:
+        raise HTTPException(503, "RAG engine not ready.")
+    return rag_engine.get_graph_data()
+
+
+@app.get("/api/entities")
+async def get_entities(limit: int = Query(100, ge=1, le=1000)):
+    """Get all entities in the knowledge graph."""
+    if not rag_engine.initialized:
+        raise HTTPException(503, "RAG engine not ready.")
+    return {"entities": rag_engine.get_entities(limit=limit)}
+
+
+# ── RAG System Stats ────────────────────────────────────────────────────────
+
+@app.get("/api/rag/stats")
+async def rag_stats():
+    """Get comprehensive RAG system statistics."""
+    return rag_engine.get_rag_stats()
+
+
+@app.get("/api/rag/health")
+async def rag_health():
+    """RAG system health check."""
+    return {
+        "rag_initialized": rag_engine.initialized,
+        "stats": rag_engine.get_rag_stats() if rag_engine.initialized else {},
+    }
 
 
 # ── Main ─────────────────────────────────────────────────────────────────────

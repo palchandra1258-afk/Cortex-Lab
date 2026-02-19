@@ -1,4 +1,4 @@
-import { ChatMessage, ChatSettings, DEFAULT_SETTINGS } from "./types";
+import { ChatMessage, ChatSettings, DEFAULT_SETTINGS, MemoryObject, GraphData, RAGStats, EvidenceCard } from "./types";
 
 const API_BASE = "/api";
 
@@ -102,4 +102,115 @@ export async function streamMessage(
   } catch (err) {
     onError(err instanceof Error ? err : new Error(String(err)));
   }
+}
+
+// ── RAG-Enhanced Chat ───────────────────────────────────────────
+
+export async function ragChat(
+  messages: { role: string; content: string }[],
+  settings: ChatSettings = DEFAULT_SETTINGS,
+  sessionId: string = "",
+): Promise<{
+  content: string;
+  thinking?: string;
+  evidence?: EvidenceCard[];
+  agents_used?: string[];
+  confidence?: number;
+  query_analysis?: { intent: string; complexity: number; routing: string };
+  processing_time_ms?: number;
+  cache_hit?: boolean;
+}> {
+  const res = await fetch(`${API_BASE}/rag/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      messages,
+      temperature: settings.temperature,
+      top_p: settings.topP,
+      max_tokens: settings.maxTokens,
+      stream: false,
+      use_rag: true,
+      session_id: sessionId,
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Server error ${res.status}`);
+  }
+
+  return res.json();
+}
+
+// ── Memory Management ───────────────────────────────────────────
+
+export async function getMemories(
+  limit: number = 50,
+  offset: number = 0,
+): Promise<{ memories: MemoryObject[]; total: number }> {
+  const res = await fetch(`${API_BASE}/memories?limit=${limit}&offset=${offset}`);
+  if (!res.ok) throw new Error(`Failed to fetch memories: ${res.status}`);
+  return res.json();
+}
+
+export async function ingestMemory(
+  content: string,
+  source: string = "manual",
+): Promise<{ status: string; memory: MemoryObject }> {
+  const res = await fetch(`${API_BASE}/memories/ingest`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content, source }),
+  });
+  if (!res.ok) throw new Error(`Failed to ingest memory: ${res.status}`);
+  return res.json();
+}
+
+export async function searchMemories(
+  query: string,
+  topK: number = 10,
+): Promise<{ results: MemoryObject[]; count: number }> {
+  const res = await fetch(`${API_BASE}/memories/search`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query, top_k: topK }),
+  });
+  if (!res.ok) throw new Error(`Failed to search memories: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteMemory(memoryId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/memories/${memoryId}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`Failed to delete memory: ${res.status}`);
+}
+
+// ── Knowledge Graph ─────────────────────────────────────────────
+
+export async function getGraphData(): Promise<GraphData> {
+  const res = await fetch(`${API_BASE}/graph`);
+  if (!res.ok) throw new Error(`Failed to fetch graph: ${res.status}`);
+  return res.json();
+}
+
+export async function getEntities(): Promise<{ entities: any[] }> {
+  const res = await fetch(`${API_BASE}/entities`);
+  if (!res.ok) throw new Error(`Failed to fetch entities: ${res.status}`);
+  return res.json();
+}
+
+// ── RAG Stats ───────────────────────────────────────────────────
+
+export async function getRAGStats(): Promise<RAGStats> {
+  const res = await fetch(`${API_BASE}/rag/stats`);
+  if (!res.ok) throw new Error(`Failed to fetch stats: ${res.status}`);
+  return res.json();
+}
+
+export async function getRAGHealth(): Promise<{
+  rag_initialized: boolean;
+  stats: RAGStats;
+}> {
+  const res = await fetch(`${API_BASE}/rag/health`);
+  if (!res.ok) throw new Error(`Failed to fetch RAG health: ${res.status}`);
+  return res.json();
 }

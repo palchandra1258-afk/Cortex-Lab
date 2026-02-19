@@ -1,7 +1,7 @@
 "use client";
 
 import { ChatSettings } from "@/lib/types";
-import { X, RotateCcw } from "lucide-react";
+import { X, RotateCcw, Brain } from "lucide-react";
 
 interface Props {
   settings: ChatSettings;
@@ -16,6 +16,7 @@ export function SettingsPanel({ settings, onUpdate, onClose }: Props) {
       topP: 0.95,
       maxTokens: 2048,
       stream: true,
+      useRAG: true,
     });
   };
 
@@ -154,6 +155,35 @@ export function SettingsPanel({ settings, onUpdate, onClose }: Props) {
               <span
                 className={`absolute top-1 left-1 h-4 w-4 rounded-full bg-white transition-transform duration-200 shadow-sm ${
                   settings.stream ? "translate-x-5" : "translate-x-0"
+                }`}
+              />
+            </button>
+          </div>
+
+          {/* RAG Memory toggle */}
+          <div className="flex items-center justify-between py-1">
+            <div>
+              <label className="text-xs font-medium text-surface-300 flex items-center gap-1.5">
+                <Brain size={12} className="text-deepseek-400" />
+                RAG Memory
+              </label>
+              <p className="text-[10px] text-surface-600 mt-0.5">
+                Enable retrieval-augmented generation with memory
+              </p>
+            </div>
+            <button
+              onClick={() =>
+                onUpdate({ ...settings, useRAG: !settings.useRAG })
+              }
+              className={`relative h-6 w-11 rounded-full transition-colors duration-200 ${
+                settings.useRAG
+                  ? "bg-emerald-600"
+                  : "bg-surface-700"
+              }`}
+            >
+              <span
+                className={`absolute top-1 left-1 h-4 w-4 rounded-full bg-white transition-transform duration-200 shadow-sm ${
+                  settings.useRAG ? "translate-x-5" : "translate-x-0"
                 }`}
               />
             </button>

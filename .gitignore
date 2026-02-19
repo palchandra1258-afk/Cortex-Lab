@@ -31,3 +31,13 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
+# RAG data
+backend/data/
+*.duckdb
+*.duckdb.wal
+*.npy
+
+# Build artifacts
+tsconfig.tsbuildinfo
+.eslintrc.json

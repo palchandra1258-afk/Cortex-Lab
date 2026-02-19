@@ -16,6 +16,10 @@ import {
   Clock,
   Zap,
   Sparkles,
+  FileText,
+  Network,
+  Shield,
+  Timer,
 } from "lucide-react";
 
 interface Props {
@@ -231,6 +235,99 @@ export function MessageBubble({ message }: Props) {
               <div className="typing-dot h-1.5 w-1.5 rounded-full bg-surface-500" />
               <div className="typing-dot h-1.5 w-1.5 rounded-full bg-surface-500" />
               <div className="typing-dot h-1.5 w-1.5 rounded-full bg-surface-500" />
+            </div>
+          )}
+
+          {/* RAG Evidence Cards */}
+          {!isUser && message.evidence && message.evidence.length > 0 && (
+            <div className="mt-3 space-y-2">
+              <div className="flex items-center gap-2">
+                <FileText size={12} className="text-surface-500" />
+                <span className="text-[11px] font-medium text-surface-400">
+                  Evidence ({message.evidence.length} memories)
+                </span>
+                {message.confidence !== undefined && (
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-md ${
+                    message.confidence > 0.7
+                      ? "bg-emerald-500/15 text-emerald-400"
+                      : message.confidence > 0.4
+                      ? "bg-amber-500/15 text-amber-400"
+                      : "bg-red-500/15 text-red-400"
+                  }`}>
+                    {Math.round(message.confidence * 100)}% confidence
+                  </span>
+                )}
+              </div>
+              <div className="grid gap-2">
+                {message.evidence.slice(0, 3).map((ev, idx) => (
+                  <div
+                    key={idx}
+                    className="rounded-lg border border-surface-800/50 bg-surface-900/40 p-3 text-xs"
+                  >
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <span className="px-1.5 py-0.5 rounded bg-deepseek-500/10 text-deepseek-400 text-[9px] font-medium uppercase">
+                        {ev.memory_type}
+                      </span>
+                      <span className="text-surface-600 text-[9px]">
+                        {new Date(ev.timestamp).toLocaleDateString()}
+                      </span>
+                      <span className="text-surface-600 text-[9px]">
+                        Score: {ev.score}
+                      </span>
+                      {ev.channel && (
+                        <span className="text-surface-600 text-[9px]">
+                          via {ev.channel}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-surface-300 leading-relaxed">
+                      {ev.content}
+                    </p>
+                    {ev.entities && ev.entities.length > 0 && (
+                      <div className="flex gap-1 mt-1.5">
+                        {ev.entities.map((entity, i) => (
+                          <span
+                            key={i}
+                            className="px-1.5 py-0.5 rounded bg-surface-800/60 text-surface-500 text-[9px]"
+                          >
+                            {entity}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* RAG Metadata Bar */}
+          {!isUser && !message.isStreaming && (message.agentsUsed || message.queryAnalysis) && (
+            <div className="flex flex-wrap items-center gap-2 mt-2 text-[10px] text-surface-600">
+              {message.agentsUsed && message.agentsUsed.length > 0 && (
+                <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-surface-800/40 border border-surface-800/50">
+                  <Network size={9} />
+                  Agents: {message.agentsUsed.join(", ")}
+                </span>
+              )}
+              {message.queryAnalysis && (
+                <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-surface-800/40 border border-surface-800/50">
+                  <Shield size={9} />
+                  {message.queryAnalysis.intent} · {message.queryAnalysis.routing}
+                </span>
+              )}
+              {message.processingTimeMs && (
+                <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-surface-800/40 border border-surface-800/50">
+                  <Timer size={9} />
+                  {Math.round(message.processingTimeMs)}ms
+                </span>
+              )}
+              {message.cacheHit && (
+                <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-400">
+                  <Zap size={9} />
+                  Cached
+                </span>
+              )}
             </div>
           )}
 

@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Send, Square, Settings2, Sparkles } from "lucide-react";
+import { Send, Square, Settings2, Sparkles, Brain } from "lucide-react";
 import { ChatMessage as ChatMessageType, ModelStatus, ChatSettings, DEFAULT_SETTINGS } from "@/lib/types";
-import { sendMessage, streamMessage } from "@/lib/api";
+import { sendMessage, streamMessage, ragChat } from "@/lib/api";
 import { MessageBubble } from "./MessageBubble";
 import { SettingsPanel } from "./SettingsPanel";
 import { EmptyState } from "./EmptyState";
@@ -75,6 +75,33 @@ export function ChatPanel({ modelStatus, onTitleUpdate }: Props) {
 
     // Create assistant placeholder
     const assistantId = `assistant-${Date.now()}`;
+
+    // ── RAG-Enhanced Mode ───────────────────────────────────────
+    if (settings.useRAG && !settings.stream) {
+      try {
+        const res = await ragChat(history, settings);
+        const assistantMsg: ChatMessageType = {
+          id: assistantId,
+          role: "assistant",
+          content: res.content,
+          thinking: res.thinking || undefined,
+          timestamp: Date.now(),
+          evidence: res.evidence,
+          agentsUsed: res.agents_used,
+          confidence: res.confidence,
+          queryAnalysis: res.query_analysis,
+          processingTimeMs: res.processing_time_ms,
+          cacheHit: res.cache_hit,
+        };
+        setMessages((prev) => [...prev, assistantMsg]);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "Unknown error";
+        setError(message);
+      } finally {
+        setIsGenerating(false);
+      }
+      return;
+    }
 
     if (settings.stream) {
       // ── Streaming ─────────────────────────────────────────────
@@ -256,9 +283,22 @@ export function ChatPanel({ modelStatus, onTitleUpdate }: Props) {
 
             {/* Bottom bar */}
             <div className="flex items-center justify-between border-t border-surface-800/30 px-4 py-2 text-[11px] text-surface-600">
-              <div className="flex items-center gap-1.5">
-                <Sparkles size={11} />
-                <span>DeepSeek-R1-1.5B</span>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1.5">
+                  <Sparkles size={11} />
+                  <span>DeepSeek-R1-1.5B</span>
+                </div>
+                <button
+                  onClick={() => setSettings((prev) => ({ ...prev, useRAG: !prev.useRAG }))}
+                  className={`flex items-center gap-1 px-2 py-0.5 rounded-md transition-all text-[10px] font-medium ${
+                    settings.useRAG
+                      ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
+                      : "bg-surface-800/50 text-surface-500 border border-surface-700/30"
+                  }`}
+                >
+                  <Brain size={10} />
+                  {settings.useRAG ? "RAG ON" : "RAG OFF"}
+                </button>
               </div>
               <span>
                 Temp {settings.temperature} · Top-P {settings.topP} · Max{" "}

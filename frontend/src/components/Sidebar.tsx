@@ -6,6 +6,9 @@ import {
   Plus,
   MessageSquare,
   Trash2,
+  Brain,
+  Network,
+  BarChart3,
 } from "lucide-react";
 
 interface Conversation {
@@ -14,6 +17,8 @@ interface Conversation {
   date: string;
 }
 
+type ActiveView = "chat" | "memories" | "graph" | "dashboard";
+
 interface Props {
   open: boolean;
   conversations: Conversation[];
@@ -21,6 +26,8 @@ interface Props {
   onSelect: (id: string) => void;
   onNewChat: () => void;
   onToggle: () => void;
+  activeView?: ActiveView;
+  onNavigate?: (view: ActiveView) => void;
 }
 
 export function Sidebar({
@@ -30,8 +37,16 @@ export function Sidebar({
   onSelect,
   onNewChat,
   onToggle,
+  activeView = "chat",
+  onNavigate,
 }: Props) {
   if (!open) return null;
+
+  const navItems: { view: ActiveView; icon: typeof Brain; label: string }[] = [
+    { view: "memories", icon: Brain, label: "Memory Browser" },
+    { view: "graph", icon: Network, label: "Knowledge Graph" },
+    { view: "dashboard", icon: BarChart3, label: "RAG Dashboard" },
+  ];
 
   return (
     <aside className="flex w-72 flex-col border-r border-surface-800/50 bg-surface-950 relative">
@@ -75,7 +90,7 @@ export function Sidebar({
               key={conv.id}
               onClick={() => onSelect(conv.id)}
               className={`group flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-sm transition-all duration-150 ${
-                conv.id === activeId
+                conv.id === activeId && activeView === "chat"
                   ? "bg-deepseek-600/10 text-deepseek-300 border border-deepseek-500/15"
                   : "text-surface-400 hover:bg-surface-800/40 hover:text-surface-200 border border-transparent"
               }`}
@@ -83,7 +98,7 @@ export function Sidebar({
               <MessageSquare
                 size={14}
                 className={
-                  conv.id === activeId
+                  conv.id === activeId && activeView === "chat"
                     ? "text-deepseek-400"
                     : "text-surface-600"
                 }
@@ -93,6 +108,38 @@ export function Sidebar({
           ))}
         </div>
       </div>
+
+      {/* RAG Navigation */}
+      {onNavigate && (
+        <div className="border-t border-surface-800/40 px-3 py-2">
+          <p className="mb-2 px-2 text-[10px] font-medium uppercase tracking-wider text-surface-600">
+            RAG System
+          </p>
+          <div className="space-y-0.5">
+            {navItems.map(({ view, icon: Icon, label }) => (
+              <button
+                key={view}
+                onClick={() => onNavigate(view)}
+                className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm transition-all duration-150 ${
+                  activeView === view
+                    ? "bg-deepseek-600/10 text-deepseek-300 border border-deepseek-500/15"
+                    : "text-surface-400 hover:bg-surface-800/40 hover:text-surface-200 border border-transparent"
+                }`}
+              >
+                <Icon
+                  size={14}
+                  className={
+                    activeView === view
+                      ? "text-deepseek-400"
+                      : "text-surface-600"
+                  }
+                />
+                <span>{label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Footer */}
       <div className="border-t border-surface-800/40 p-4">
