@@ -1,0 +1,876 @@
+#!/usr/bin/env python3
+"""
+Cortex Lab — Fine-Tuning Pipeline
+==================================
+CortexLabTrainer: Sequential 10-stage curriculum fine-tuning of
+DeepSeek-R1-Distill-Qwen-7B on RTX 4000 Ada Generation (20GB VRAM).
+
+Architecture:
+  • Stages 1–8, 10  → SFTTrainer (trl)
+  • Stage 9         → DPOTrainer (trl)
+  • Each stage loads the previous stage's merged adapter as its base
+  • Stage 10 is NEVER merged (hot-swap LoRA per user)
+
+Usage:
+  python scripts/fine_tune_cortex.py --stage stage1_faithfulness
+  python scripts/fine_tune_cortex.py --all
+  python scripts/fine_tune_cortex.py --all --resume
+  python scripts/fine_tune_cortex.py --stage stage9_dpo
+  python scripts/fine_tune_cortex.py --status
+
+Hardware target: RTX 4000 Ada Gen | 20,480 MB VRAM | BF16 | CC 8.9
+"""
+
+import os
+import sys
+import json
+import time
+import shutil
+import argparse
+import logging
+from pathlib import Path
+from datetime import datetime, timedelta
+from typing import Optional, List, Dict, Any
+
+# ─── Add project root to sys.path ───────────────────────────────────────────
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
+# ─── Logging ────────────────────────────────────────────────────────────────
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%H:%M:%S",
+)
+logger = logging.getLogger("CortexLab")
+
+# ─── Lazy imports (heavy — only after CLI parse) ─────────────────────────────
+def _import_training_deps():
+    """Import all heavy training dependencies."""
+    global torch, transformers, peft, trl, datasets
+    global AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+    global LoraConfig, get_peft_model, PeftModel
+    global SFTTrainer, SFTConfig, DPOTrainer, DPOConfig
+    global Dataset, load_dataset
+
+    import torch
+    import transformers
+    import peft
+    import trl
+    import datasets
+
+    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+    from peft import LoraConfig, get_peft_model, PeftModel
+    from trl import SFTTrainer, SFTConfig, DPOTrainer, DPOConfig
+    from datasets import Dataset, load_dataset
+
+    logger.info(f"torch        {torch.__version__}")
+    logger.info(f"transformers {transformers.__version__}")
+    logger.info(f"peft         {peft.__version__}")
+    logger.info(f"trl          {trl.__version__}")
+    logger.info(f"datasets     {datasets.__version__}")
+
+
+# ─── Config ──────────────────────────────────────────────────────────────────
+from config.training_config import (
+    BASE_MODEL,
+    OUTPUT_DIR,
+    TRAINING_DATA_DIR,
+    quantization_config,
+    LORA_CONFIGS,
+    TRAINING_CONFIGS,
+)
+
+STAGE_ORDER = [
+    "stage1_faithfulness",
+    "stage2_agentic",
+    "stage3_causal",
+    "stage4_selfrag",
+    "stage5_belief",
+    "stage6_summarization",
+    "stage7_dialogue",
+    "stage8_longcontext",
+    "stage9_dpo",
+    "stage10_user_style",
+]
+
+# Stage 9 uses DPO, all others use SFT
+DPO_STAGES = {"stage9_dpo"}
+
+# Stage 10 is NEVER merged — stays as hot-swap LoRA
+NEVER_MERGE = {"stage10_user_style"}
+
+STAGE_DATA_FILES = {
+    "stage1_faithfulness":    "stage1_faithfulness.json",
+    "stage2_agentic":         "stage2_agentic.json",
+    "stage3_causal":          "stage3_causal.json",
+    "stage4_selfrag":         "stage4_selfrag.json",
+    "stage5_belief":          "stage5_belief.json",
+    "stage6_summarization":   "stage6_summarization.json",
+    "stage7_dialogue":        "stage7_dialogue.json",
+    "stage8_longcontext":     "stage8_longcontext.json",
+    "stage9_dpo":             "stage9_dpo.json",
+    "stage10_user_style":     "stage10_user_style.json",
+}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DATASET LOADING
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _fmt_sft(ex: dict) -> str:
+    """Format a SFTExample dict into a training string."""
+    instr = ex.get("instruction", "").strip()
+    inp   = ex.get("input", "").strip()
+    out   = ex.get("output", "").strip()
+
+    if inp:
+        text = (
+            f"<|im_start|>system\n{instr}<|im_end|>\n"
+            f"<|im_start|>user\n{inp}<|im_end|>\n"
+            f"<|im_start|>assistant\n{out}<|im_end|>"
+        )
+    else:
+        text = (
+            f"<|im_start|>system\nYou are Cortex, an AI with persistent memory.<|im_end|>\n"
+            f"<|im_start|>user\n{instr}<|im_end|>\n"
+            f"<|im_start|>assistant\n{out}<|im_end|>"
+        )
+    return text
+
+
+def load_sft_dataset(stage: str) -> "Dataset":
+    """Load and format SFT dataset for a given stage."""
+    data_path = Path(TRAINING_DATA_DIR) / STAGE_DATA_FILES[stage]
+    if not data_path.exists():
+        raise FileNotFoundError(
+            f"Dataset not found: {data_path}\n"
+            f"Run: python scripts/generate_datasets.py --stage {stage}"
+        )
+
+    with open(data_path, "r", encoding="utf-8") as f:
+        raw = json.load(f)
+
+    logger.info(f"Loaded {len(raw)} raw examples from {data_path.name}")
+
+    formatted = []
+    for ex in raw:
+        try:
+            text = _fmt_sft(ex)
+            if len(text) >= 100:
+                formatted.append({"text": text})
+        except Exception:
+            continue
+
+    logger.info(f"Formatted {len(formatted)} examples for training")
+    return Dataset.from_list(formatted)
+
+
+def load_dpo_dataset(stage: str) -> "Dataset":
+    """Load and format DPO dataset for stage 9."""
+    data_path = Path(TRAINING_DATA_DIR) / STAGE_DATA_FILES[stage]
+    if not data_path.exists():
+        raise FileNotFoundError(f"DPO dataset not found: {data_path}")
+
+    with open(data_path, "r", encoding="utf-8") as f:
+        raw = json.load(f)
+
+    logger.info(f"Loaded {len(raw)} raw DPO examples from {data_path.name}")
+
+    formatted = []
+    for ex in raw:
+        try:
+            prompt   = ex.get("prompt", "").strip()
+            chosen   = ex.get("chosen", "").strip()
+            rejected = ex.get("rejected", "").strip()
+            if not (prompt and chosen and rejected):
+                continue
+            if chosen == rejected:
+                continue
+            formatted.append({
+                "prompt":   f"<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n",
+                "chosen":   chosen + "<|im_end|>",
+                "rejected": rejected + "<|im_end|>",
+            })
+        except Exception:
+            continue
+
+    logger.info(f"Formatted {len(formatted)} DPO pairs for training")
+    return Dataset.from_list(formatted)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MODEL LOADING
+# ─────────────────────────────────────────────────────────────────────────────
+
+def get_base_model_path(stage: str) -> str:
+    """
+    Determine the base model path for a given stage.
+    Each stage builds on the previous stage's merged adapter.
+    Stage 1 always starts from the base HuggingFace model.
+    """
+    idx = STAGE_ORDER.index(stage)
+    if idx == 0:
+        # Stage 1: start from base model
+        return BASE_MODEL
+
+    # Check if previous stage has a merged model
+    prev_stage = STAGE_ORDER[idx - 1]
+    merged_path = Path(OUTPUT_DIR) / prev_stage / "merged"
+    if merged_path.exists():
+        logger.info(f"Loading merged model from stage: {prev_stage}")
+        return str(merged_path)
+
+    # Fallback: check for adapter + auto-merge on load
+    adapter_path = Path(OUTPUT_DIR) / prev_stage / "adapter"
+    if adapter_path.exists():
+        logger.warning(
+            f"Previous stage '{prev_stage}' has adapter but no merged model. "
+            f"Will merge on-the-fly. Consider running --merge-only {prev_stage} first."
+        )
+        return f"adapter:{adapter_path}"
+
+    logger.warning(
+        f"No checkpoint found for stage '{prev_stage}'. "
+        f"Falling back to base model. Run stages in order for best results."
+    )
+    return BASE_MODEL
+
+
+def load_model_and_tokenizer(
+    model_path: str,
+    stage: str,
+    is_dpo: bool = False,
+) -> tuple:
+    """
+    Load base model (4-bit QLoRA) + tokenizer, attach LoRA adapter.
+    For DPO, returns model WITHOUT LoRA (DPOTrainer applies it).
+    """
+    from transformers import BitsAndBytesConfig
+    from peft import LoraConfig, get_peft_model, PeftModel
+
+    # ── Handle adapter-path prefix (merge on-the-fly) ──────────────────────
+    is_adapter_load = isinstance(model_path, str) and model_path.startswith("adapter:")
+    actual_path = model_path.replace("adapter:", "") if is_adapter_load else model_path
+
+    # ── Quantization config ─────────────────────────────────────────────────
+    bnb_config = BitsAndBytesConfig(
+        load_in_4bit=quantization_config["load_in_4bit"],
+        bnb_4bit_compute_dtype=quantization_config["bnb_4bit_compute_dtype"],
+        bnb_4bit_use_double_quant=quantization_config["bnb_4bit_use_double_quant"],
+        bnb_4bit_quant_type=quantization_config["bnb_4bit_quant_type"],
+    )
+
+    logger.info(f"Loading base model: {actual_path}")
+    logger.info(f"Quantization: 4-bit NF4 + double quant | compute: bf16")
+
+    model = AutoModelForCausalLM.from_pretrained(
+        actual_path,
+        quantization_config=bnb_config,
+        device_map="auto",
+        trust_remote_code=True,
+        torch_dtype=torch.bfloat16,
+        attn_implementation="eager",      # Avoid flash-attn dependency
+    )
+
+    # ── If loading from adapter path, merge before applying new LoRA ────────
+    if is_adapter_load:
+        logger.info(f"Merging adapter from: {model_path.replace('adapter:', '')}")
+        model = PeftModel.from_pretrained(model, model_path.replace("adapter:", ""))
+        model = model.merge_and_unload()
+        logger.info("Adapter merged successfully")
+
+    # ── Tokenizer ───────────────────────────────────────────────────────────
+    tokenizer_path = BASE_MODEL  # Always load tokenizer from HF base (consistent vocab)
+    if Path(actual_path).exists() and (Path(actual_path) / "tokenizer.json").exists():
+        tokenizer_path = actual_path
+
+    tokenizer = AutoTokenizer.from_pretrained(
+        tokenizer_path,
+        trust_remote_code=True,
+        padding_side="right",
+    )
+
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+        tokenizer.pad_token_id = tokenizer.eos_token_id
+
+    # ── LoRA config for this stage ──────────────────────────────────────────
+    lora_cfg = LORA_CONFIGS[stage]
+    lora_config = LoraConfig(
+        r=lora_cfg["r"],
+        lora_alpha=lora_cfg["lora_alpha"],
+        target_modules=lora_cfg["target_modules"],
+        lora_dropout=lora_cfg["lora_dropout"],
+        bias=lora_cfg["bias"],
+        task_type=lora_cfg["task_type"],
+    )
+
+    if not is_dpo:
+        model = get_peft_model(model, lora_config)
+        # Required for gradient checkpointing with 4-bit quantized models
+        model.enable_input_require_grads()
+        model.print_trainable_parameters()
+
+    return model, tokenizer, lora_config
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TRAINING
+# ─────────────────────────────────────────────────────────────────────────────
+
+def train_sft_stage(
+    stage: str,
+    model,
+    tokenizer,
+    dataset: "Dataset",
+    output_dir: Path,
+    cfg: dict,
+    resume_from_checkpoint: Optional[str] = None,
+):
+    """Train a single SFT stage using trl.SFTTrainer."""
+
+    sft_config = SFTConfig(
+        output_dir=str(output_dir / "checkpoints"),
+        num_train_epochs=cfg["num_train_epochs"],
+        per_device_train_batch_size=cfg["per_device_train_batch_size"],
+        gradient_accumulation_steps=cfg["gradient_accumulation_steps"],
+        gradient_checkpointing=cfg.get("gradient_checkpointing", False),
+        gradient_checkpointing_kwargs={"use_reentrant": False} if cfg.get("gradient_checkpointing") else None,
+        learning_rate=cfg["learning_rate"],
+        warmup_steps=int(cfg.get("warmup_ratio", 0.05) * cfg["num_train_epochs"] * 100),
+        lr_scheduler_type=cfg["lr_scheduler_type"],
+        optim=cfg["optim"],
+        weight_decay=cfg["weight_decay"],
+        max_grad_norm=cfg["max_grad_norm"],
+        logging_steps=cfg["logging_steps"],
+        save_strategy=cfg["save_strategy"],
+        save_total_limit=cfg["save_total_limit"],
+        bf16=cfg["bf16"],
+        dataloader_num_workers=cfg.get("dataloader_num_workers", 2),
+        max_length=cfg.get("max_seq_length", 1024),
+        dataset_text_field="text",
+        report_to="none",               # No wandb/tensorboard dependency
+        remove_unused_columns=False,
+    )
+
+    trainer = SFTTrainer(
+        model=model,
+        args=sft_config,
+        train_dataset=dataset,
+        processing_class=tokenizer,
+    )
+
+    logger.info(f"Starting SFT training: {stage}")
+    logger.info(f"  Examples: {len(dataset)}")
+    logger.info(f"  Epochs:   {cfg['num_train_epochs']}")
+    logger.info(f"  Batch:    {cfg['per_device_train_batch_size']} × {cfg['gradient_accumulation_steps']} = {cfg['per_device_train_batch_size'] * cfg['gradient_accumulation_steps']} effective")
+    logger.info(f"  LR:       {cfg['learning_rate']}")
+    logger.info(f"  Seq len:  {cfg.get('max_seq_length', 2048)}")
+
+    t0 = time.time()
+    trainer.train(resume_from_checkpoint=resume_from_checkpoint)
+    elapsed = time.time() - t0
+
+    logger.info(f"Training complete in {timedelta(seconds=int(elapsed))}")
+    return trainer
+
+
+def train_dpo_stage(
+    stage: str,
+    model,
+    tokenizer,
+    lora_config: "LoraConfig",
+    dataset: "Dataset",
+    output_dir: Path,
+    cfg: dict,
+    resume_from_checkpoint: Optional[str] = None,
+):
+    """Train Stage 9 using trl.DPOTrainer."""
+    from peft import get_peft_model
+
+    dpo_config = DPOConfig(
+        output_dir=str(output_dir / "checkpoints"),
+        learning_rate=cfg["learning_rate"],
+        num_train_epochs=cfg["num_train_epochs"],
+        per_device_train_batch_size=cfg["per_device_train_batch_size"],
+        gradient_accumulation_steps=cfg["gradient_accumulation_steps"],
+        gradient_checkpointing=cfg.get("gradient_checkpointing", False),
+        warmup_ratio=cfg.get("warmup_ratio", 0.1),
+        beta=cfg.get("beta", 0.1),
+        max_length=cfg.get("max_length", 2048),
+        max_prompt_length=cfg.get("max_prompt_length", 1024),
+        bf16=cfg["bf16"],
+        logging_steps=cfg["logging_steps"],
+        save_strategy=cfg["save_strategy"],
+        save_total_limit=cfg["save_total_limit"],
+        report_to="none",
+        remove_unused_columns=False,
+    )
+
+    # Apply LoRA for DPO
+    model = get_peft_model(model, lora_config)
+    model.print_trainable_parameters()
+
+    trainer = DPOTrainer(
+        model=model,
+        ref_model=None,         # Use implicit reference (PEFT frozen base)
+        args=dpo_config,
+        train_dataset=dataset,
+        processing_class=tokenizer,
+    )
+
+    logger.info(f"Starting DPO training: {stage}")
+    logger.info(f"  Examples: {len(dataset)}")
+    logger.info(f"  Beta:     {cfg.get('beta', 0.1)}")
+    logger.info(f"  LR:       {cfg['learning_rate']}")
+
+    t0 = time.time()
+    trainer.train(resume_from_checkpoint=resume_from_checkpoint)
+    elapsed = time.time() - t0
+
+    logger.info(f"DPO training complete in {timedelta(seconds=int(elapsed))}")
+    return trainer
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ADAPTER SAVE & MERGE
+# ─────────────────────────────────────────────────────────────────────────────
+
+def save_adapter(trainer, output_dir: Path, stage: str):
+    """Save the LoRA adapter weights."""
+    adapter_dir = output_dir / "adapter"
+    adapter_dir.mkdir(parents=True, exist_ok=True)
+    trainer.model.save_pretrained(str(adapter_dir))
+    trainer.processing_class.save_pretrained(str(adapter_dir))
+    logger.info(f"Adapter saved → {adapter_dir}")
+
+
+def merge_adapter(output_dir: Path, stage: str):
+    """
+    Merge LoRA adapter into base model weights and save as merged model.
+    Skipped for Stage 10 (hot-swap LoRA — never merged).
+    """
+    if stage in NEVER_MERGE:
+        logger.info(f"Stage {stage} is a hot-swap adapter — skipping merge.")
+        return
+
+    adapter_dir = output_dir / "adapter"
+    merged_dir  = output_dir / "merged"
+
+    if not adapter_dir.exists():
+        logger.error(f"Adapter not found: {adapter_dir}")
+        return
+
+    logger.info(f"Merging adapter → {merged_dir}")
+
+    from peft import PeftModel
+    from transformers import BitsAndBytesConfig
+
+    # Reload base model in full precision for merge
+    # Determine what the base was for this stage
+    idx = STAGE_ORDER.index(stage)
+    if idx == 0:
+        base_path = BASE_MODEL
+    else:
+        prev_stage = STAGE_ORDER[idx - 1]
+        prev_merged = Path(OUTPUT_DIR) / prev_stage / "merged"
+        base_path = str(prev_merged) if prev_merged.exists() else BASE_MODEL
+
+    logger.info(f"Loading base for merge: {base_path}")
+    base_model = AutoModelForCausalLM.from_pretrained(
+        base_path,
+        torch_dtype=torch.bfloat16,
+        device_map="cpu",           # CPU merge — avoids VRAM spike
+        trust_remote_code=True,
+    )
+
+    peft_model = PeftModel.from_pretrained(base_model, str(adapter_dir))
+    merged = peft_model.merge_and_unload()
+
+    merged_dir.mkdir(parents=True, exist_ok=True)
+    merged.save_pretrained(str(merged_dir))
+
+    # Copy tokenizer
+    tokenizer = AutoTokenizer.from_pretrained(str(adapter_dir), trust_remote_code=True)
+    tokenizer.save_pretrained(str(merged_dir))
+
+    logger.info(f"Merged model saved → {merged_dir}")
+
+    # Save merge metadata
+    meta = {
+        "stage": stage,
+        "merged_at": datetime.now().isoformat(),
+        "base_model": base_path,
+        "adapter": str(adapter_dir),
+    }
+    (merged_dir / "merge_meta.json").write_text(json.dumps(meta, indent=2))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STATUS TRACKING
+# ─────────────────────────────────────────────────────────────────────────────
+
+def get_stage_status(stage: str) -> str:
+    """Return status of a training stage."""
+    out = Path(OUTPUT_DIR) / stage
+    merged = out / "merged"
+    adapter = out / "adapter"
+    checkpoints = out / "checkpoints"
+
+    if merged.exists():
+        return "✅ merged"
+    if adapter.exists():
+        return "⚡ adapter (not merged)"
+    if checkpoints.exists() and any(checkpoints.iterdir()):
+        return "🔄 in-progress"
+    return "⬜ not started"
+
+
+def print_status():
+    """Print training status for all stages."""
+    print("\n" + "=" * 65)
+    print(f"  CORTEX LAB — Training Status")
+    print(f"  Base: {BASE_MODEL}")
+    print("=" * 65)
+
+    total_done = 0
+    for stage in STAGE_ORDER:
+        status = get_stage_status(stage)
+        data_file = Path(TRAINING_DATA_DIR) / STAGE_DATA_FILES[stage]
+        data_info = ""
+        if data_file.exists():
+            size_mb = data_file.stat().st_size / 1_048_576
+            with open(data_file, "r") as f:
+                count = len(json.load(f))
+            data_info = f"{count:,} examples ({size_mb:.1f} MB)"
+        else:
+            data_info = "⚠️  dataset missing"
+
+        done = "✅" in status or "⚡" in status
+        if done:
+            total_done += 1
+
+        print(f"  {stage:<28}  {status:<28}  {data_info}")
+
+    print("=" * 65)
+    print(f"  Completed: {total_done}/{len(STAGE_ORDER)} stages")
+    print("=" * 65 + "\n")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# VRAM CHECK
+# ─────────────────────────────────────────────────────────────────────────────
+
+def check_vram():
+    """Check VRAM availability before training."""
+    if not torch.cuda.is_available():
+        logger.error("CUDA not available. Training requires a GPU.")
+        sys.exit(1)
+
+    device = torch.cuda.current_device()
+    props = torch.cuda.get_device_properties(device)
+    total_mb = props.total_memory / 1_048_576
+    free_mb = (props.total_memory - torch.cuda.memory_allocated(device)) / 1_048_576
+
+    logger.info(f"GPU: {props.name}")
+    logger.info(f"VRAM: {total_mb:.0f} MB total | {free_mb:.0f} MB free")
+    logger.info(f"Compute Capability: {props.major}.{props.minor}")
+
+    if total_mb < 15_000:
+        logger.warning(f"Less than 15GB VRAM detected ({total_mb:.0f} MB). Training may OOM.")
+        logger.warning("Consider reducing per_device_train_batch_size in config/training_config.py")
+
+    if props.major < 8:
+        logger.warning("BF16 requires compute capability >= 8.0. Falling back to FP16.")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MAIN TRAINER CLASS
+# ─────────────────────────────────────────────────────────────────────────────
+
+class CortexLabTrainer:
+    """
+    Orchestrates 10-stage sequential curriculum fine-tuning.
+
+    Each stage:
+    1. Determines the correct base model (HF or previous merged checkpoint)
+    2. Loads model in 4-bit QLoRA
+    3. Attaches stage-specific LoRA adapter
+    4. Trains with SFTTrainer or DPOTrainer
+    5. Saves adapter
+    6. Merges adapter into weights (except Stage 10)
+    7. Records completion metadata
+    """
+
+    def __init__(self, resume: bool = False):
+        self.resume = resume
+        self.output_root = Path(OUTPUT_DIR)
+        self.output_root.mkdir(parents=True, exist_ok=True)
+
+    def _stage_output_dir(self, stage: str) -> Path:
+        d = self.output_root / stage
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    def _is_complete(self, stage: str) -> bool:
+        status = get_stage_status(stage)
+        return "✅ merged" in status or ("stage10" in stage and "⚡ adapter" in status)
+
+    def _find_resume_checkpoint(self, stage: str) -> Optional[str]:
+        """Find the latest checkpoint to resume from."""
+        ckpt_dir = self._stage_output_dir(stage) / "checkpoints"
+        if not ckpt_dir.exists():
+            return None
+        checkpoints = sorted(
+            [d for d in ckpt_dir.iterdir() if d.name.startswith("checkpoint-")],
+            key=lambda x: int(x.name.split("-")[-1]),
+        )
+        if checkpoints:
+            logger.info(f"Resuming from checkpoint: {checkpoints[-1]}")
+            return str(checkpoints[-1])
+        return None
+
+    def run_stage(self, stage: str):
+        """Run a single training stage."""
+        if stage not in STAGE_ORDER:
+            raise ValueError(f"Unknown stage: {stage}. Valid: {STAGE_ORDER}")
+
+        output_dir = self._stage_output_dir(stage)
+        is_dpo = stage in DPO_STAGES
+
+        # ── Skip if already complete (unless --force) ─────────────────────
+        if self._is_complete(stage) and not self.resume:
+            logger.info(f"Stage {stage} already complete. Skipping. (Use --force to retrain)")
+            return
+
+        # ── Resume checkpoint ─────────────────────────────────────────────
+        resume_from = None
+        if self.resume:
+            resume_from = self._find_resume_checkpoint(stage)
+
+        # ── Load dataset ──────────────────────────────────────────────────
+        logger.info(f"\n{'='*60}")
+        logger.info(f"STAGE: {stage.upper()}")
+        logger.info(f"{'='*60}")
+
+        if is_dpo:
+            dataset = load_dpo_dataset(stage)
+        else:
+            dataset = load_sft_dataset(stage)
+
+        # ── Determine base model ──────────────────────────────────────────
+        base_path = get_base_model_path(stage)
+
+        # ── Load model + tokenizer ────────────────────────────────────────
+        model, tokenizer, lora_config = load_model_and_tokenizer(
+            base_path, stage, is_dpo=is_dpo
+        )
+
+        # ── Get training config ───────────────────────────────────────────
+        cfg = TRAINING_CONFIGS[stage]
+
+        # ── Train ─────────────────────────────────────────────────────────
+        if is_dpo:
+            trainer = train_dpo_stage(
+                stage, model, tokenizer, lora_config,
+                dataset, output_dir, cfg, resume_from
+            )
+        else:
+            trainer = train_sft_stage(
+                stage, model, tokenizer,
+                dataset, output_dir, cfg, resume_from
+            )
+
+        # ── Save adapter ──────────────────────────────────────────────────
+        save_adapter(trainer, output_dir, stage)
+
+        # ── Merge (except Stage 10) ───────────────────────────────────────
+        if stage not in NEVER_MERGE:
+            # Free training VRAM before merge
+            del model
+            del trainer
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            merge_adapter(output_dir, stage)
+        else:
+            logger.info(f"Stage 10 adapter retained as hot-swap LoRA. Not merging.")
+
+        # ── Save completion metadata ──────────────────────────────────────
+        meta = {
+            "stage": stage,
+            "completed_at": datetime.now().isoformat(),
+            "base_model": base_path,
+            "examples_trained": len(dataset),
+            "is_dpo": is_dpo,
+            "merged": stage not in NEVER_MERGE,
+        }
+        (output_dir / "training_meta.json").write_text(json.dumps(meta, indent=2))
+        logger.info(f"Stage {stage} COMPLETE ✅")
+
+    def run_all(self):
+        """Run all 10 stages in order."""
+        logger.info("Starting full 10-stage curriculum training...")
+        logger.info(f"Output: {self.output_root.resolve()}")
+
+        for i, stage in enumerate(STAGE_ORDER):
+            logger.info(f"\n[{i+1}/{len(STAGE_ORDER)}] {stage}")
+            try:
+                self.run_stage(stage)
+            except Exception as e:
+                logger.error(f"Stage {stage} failed: {e}")
+                logger.error("Fix the error and resume with: --all --resume")
+                raise
+
+        logger.info("\n🎉 All 10 stages complete! Model ready at: fine_tuned/")
+        print_status()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CLI
+# ─────────────────────────────────────────────────────────────────────────────
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Cortex Lab — 10-Stage Curriculum Fine-Tuning Pipeline",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python scripts/fine_tune_cortex.py --status
+  python scripts/fine_tune_cortex.py --stage stage1_faithfulness
+  python scripts/fine_tune_cortex.py --all
+  python scripts/fine_tune_cortex.py --all --resume
+  python scripts/fine_tune_cortex.py --merge-only stage1_faithfulness
+  python scripts/fine_tune_cortex.py --validate-data
+
+Stages in order:
+  1. stage1_faithfulness   — RAG-grounded citation behavior
+  2. stage2_agentic        — Tool-use and JSON routing
+  3. stage3_causal         — Temporal causal reasoning
+  4. stage4_selfrag        — Self-critique (ISREL/ISSUP/ISUSE)
+  5. stage5_belief         — Belief evolution tracking
+  6. stage6_summarization  — Memory compression
+  7. stage7_dialogue       — Multi-turn coherence
+  8. stage8_longcontext    — Long-context multi-hop reasoning
+  9. stage9_dpo            — Preference alignment (DPO)
+  10. stage10_user_style   — Personal style adapter (hot-swap)
+        """
+    )
+
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument(
+        "--stage", type=str, metavar="STAGE",
+        help="Train a single stage (e.g., stage1_faithfulness)"
+    )
+    group.add_argument(
+        "--all", action="store_true",
+        help="Train all 10 stages sequentially"
+    )
+    group.add_argument(
+        "--status", action="store_true",
+        help="Show training status for all stages"
+    )
+    group.add_argument(
+        "--merge-only", type=str, metavar="STAGE",
+        help="Only merge the adapter for a completed stage"
+    )
+    group.add_argument(
+        "--validate-data", action="store_true",
+        help="Validate all dataset files without training"
+    )
+
+    parser.add_argument(
+        "--resume", action="store_true",
+        help="Resume training from the latest checkpoint"
+    )
+    parser.add_argument(
+        "--force", action="store_true",
+        help="Force retrain even if stage is already complete"
+    )
+
+    return parser.parse_args()
+
+
+def validate_datasets():
+    """Validate all dataset files exist and are well-formed."""
+    print("\n" + "=" * 60)
+    print("  Validating datasets...")
+    print("=" * 60)
+    all_ok = True
+    total_examples = 0
+
+    for stage, filename in STAGE_DATA_FILES.items():
+        path = Path(TRAINING_DATA_DIR) / filename
+        if not path.exists():
+            print(f"  ❌ MISSING: {filename}")
+            all_ok = False
+            continue
+
+        try:
+            with open(path, "r") as f:
+                data = json.load(f)
+
+            is_dpo = stage in DPO_STAGES
+            valid = 0
+            for ex in data:
+                if is_dpo:
+                    if ex.get("prompt") and ex.get("chosen") and ex.get("rejected"):
+                        valid += 1
+                else:
+                    if ex.get("instruction") and ex.get("output"):
+                        valid += 1
+
+            size_mb = path.stat().st_size / 1_048_576
+            print(f"  ✅ {filename:<45} {valid:>5,} valid / {len(data):>5,} total  ({size_mb:.1f} MB)")
+            total_examples += valid
+
+        except Exception as e:
+            print(f"  ❌ ERROR: {filename}: {e}")
+            all_ok = False
+
+    print("=" * 60)
+    print(f"  Total valid examples: {total_examples:,}")
+    print(f"  Status: {'✅ ALL OK' if all_ok else '❌ ISSUES FOUND'}")
+    print("=" * 60 + "\n")
+    return all_ok
+
+
+def main():
+    args = parse_args()
+
+    # ── Status / validation — no heavy imports needed ───────────────────────
+    if args.status:
+        # Lazy-import just torch for VRAM info
+        try:
+            import torch
+            globals()["torch"] = torch
+            check_vram()
+        except ImportError:
+            pass
+        print_status()
+        return
+
+    if args.validate_data:
+        ok = validate_datasets()
+        sys.exit(0 if ok else 1)
+
+    if args.merge_only:
+        _import_training_deps()
+        check_vram()
+        merge_adapter(Path(OUTPUT_DIR) / args.merge_only, args.merge_only)
+        return
+
+    # ── Training — load all heavy deps ──────────────────────────────────────
+    _import_training_deps()
+    check_vram()
+
+    trainer = CortexLabTrainer(resume=args.resume)
+
+    if args.all:
+        trainer.run_all()
+    elif args.stage:
+        trainer.run_stage(args.stage)
+
+
+if __name__ == "__main__":
+    main()

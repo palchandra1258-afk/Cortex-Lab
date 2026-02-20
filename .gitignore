@@ -11,11 +11,18 @@ __pycache__/
 .next/
 out/
 
-# Model files
+# Model files (large binaries - not tracked)
 models/
 cache/
 checkpoints/
 output/
+
+# Fine-tuned model outputs (large binaries)
+fine_tuned/
+
+# Training logs
+*.log
+nohup.out
 
 # Environment
 .env
