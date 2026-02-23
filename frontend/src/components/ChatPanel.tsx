@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Send, Square, Settings2, Sparkles, Brain } from "lucide-react";
 import { ChatMessage as ChatMessageType, ModelStatus, ChatSettings, DEFAULT_SETTINGS } from "@/lib/types";
-import { sendMessage, streamMessage, ragChat } from "@/lib/api";
+import { sendMessage, streamMessage, ragChat, streamRAGMessage, RAGStreamMeta } from "@/lib/api";
 import { MessageBubble } from "./MessageBubble";
 import { SettingsPanel } from "./SettingsPanel";
 import { EmptyState } from "./EmptyState";
@@ -77,28 +77,89 @@ export function ChatPanel({ modelStatus, onTitleUpdate }: Props) {
     const assistantId = `assistant-${Date.now()}`;
 
     // ── RAG-Enhanced Mode ───────────────────────────────────────
-    if (settings.useRAG && !settings.stream) {
-      try {
-        const res = await ragChat(history, settings);
+    if (settings.useRAG) {
+      if (settings.stream) {
+        // ── RAG + Streaming ─────────────────────────────────────
         const assistantMsg: ChatMessageType = {
           id: assistantId,
           role: "assistant",
-          content: res.content,
-          thinking: res.thinking || undefined,
+          content: "",
           timestamp: Date.now(),
-          evidence: res.evidence,
-          agentsUsed: res.agents_used,
-          confidence: res.confidence,
-          queryAnalysis: res.query_analysis,
-          processingTimeMs: res.processing_time_ms,
-          cacheHit: res.cache_hit,
+          isStreaming: true,
         };
         setMessages((prev) => [...prev, assistantMsg]);
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : "Unknown error";
-        setError(message);
-      } finally {
-        setIsGenerating(false);
+
+        await streamRAGMessage(
+          history,
+          settings,
+          "", // session_id
+          (meta: RAGStreamMeta) => {
+            // Update message with RAG metadata (evidence, agents, etc.)
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId
+                  ? {
+                      ...m,
+                      thinking: meta.thinking || m.thinking,
+                      evidence: meta.evidence || m.evidence,
+                      agentsUsed: meta.agents_used || m.agentsUsed,
+                      confidence: meta.confidence ?? m.confidence,
+                      queryAnalysis: meta.query_analysis || m.queryAnalysis,
+                    }
+                  : m,
+              ),
+            );
+          },
+          (token) => {
+            if (abortRef.current) return;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId
+                  ? { ...m, content: m.content + token }
+                  : m,
+              ),
+            );
+          },
+          () => {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId ? { ...m, isStreaming: false } : m,
+              ),
+            );
+            setIsGenerating(false);
+          },
+          (err) => {
+            setError(err.message);
+            setIsGenerating(false);
+            setMessages((prev) =>
+              prev.filter((m) => m.id !== assistantId || m.content.length > 0),
+            );
+          },
+        );
+      } else {
+        // ── RAG Non-streaming ───────────────────────────────────
+        try {
+          const res = await ragChat(history, settings);
+          const assistantMsg: ChatMessageType = {
+            id: assistantId,
+            role: "assistant",
+            content: res.content,
+            thinking: res.thinking || undefined,
+            timestamp: Date.now(),
+            evidence: res.evidence,
+            agentsUsed: res.agents_used,
+            confidence: res.confidence,
+            queryAnalysis: res.query_analysis,
+            processingTimeMs: res.processing_time_ms,
+            cacheHit: res.cache_hit,
+          };
+          setMessages((prev) => [...prev, assistantMsg]);
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : "Unknown error";
+          setError(message);
+        } finally {
+          setIsGenerating(false);
+        }
       }
       return;
     }
@@ -204,12 +265,12 @@ export function ChatPanel({ modelStatus, onTitleUpdate }: Props) {
 
       {/* Error toast */}
       {error && (
-        <div className="absolute bottom-28 left-1/2 -translate-x-1/2 z-50">
-          <div className="rounded-lg bg-red-500/10 border border-red-500/30 px-4 py-2.5 text-sm text-red-400 backdrop-blur-sm flex items-center gap-2 shadow-xl">
+        <div className="absolute bottom-28 left-1/2 -translate-x-1/2 z-50 fade-in">
+          <div className="rounded-xl bg-red-500/[0.07] border border-red-500/20 px-4 py-2.5 text-sm text-red-400 backdrop-blur-xl flex items-center gap-2 shadow-2xl shadow-red-500/10">
             <span>⚠️ {error}</span>
             <button
               onClick={() => setError(null)}
-              className="text-red-400/60 hover:text-red-300 ml-2"
+              className="text-red-400/60 hover:text-red-300 ml-2 transition-colors"
             >
               ✕
             </button>
@@ -227,17 +288,17 @@ export function ChatPanel({ modelStatus, onTitleUpdate }: Props) {
       )}
 
       {/* Input area */}
-      <div className="border-t border-surface-800/50 bg-surface-950/80 backdrop-blur-xl px-4 py-4">
+      <div className="border-t border-slate-200/80 bg-white/90 backdrop-blur-2xl px-4 py-4">
         <div className="mx-auto max-w-3xl">
-          <div className="glow-border rounded-2xl bg-surface-900/60 transition-all duration-300">
+          <div className="glow-border rounded-2xl bg-white transition-all duration-300 border border-slate-200">
             <div className="flex items-end gap-2 p-3">
               {/* Settings button */}
               <button
                 onClick={() => setShowSettings((p) => !p)}
                 className={`flex-shrink-0 rounded-xl p-2.5 transition-all duration-200 ${
                   showSettings
-                    ? "bg-deepseek-600/20 text-deepseek-400"
-                    : "text-surface-500 hover:text-surface-300 hover:bg-surface-800/60"
+                    ? "bg-indigo-50 text-indigo-600 shadow-sm shadow-indigo-100"
+                    : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"
                 }`}
                 title="Settings"
               >
@@ -257,14 +318,14 @@ export function ChatPanel({ modelStatus, onTitleUpdate }: Props) {
                 }
                 disabled={!isOnline}
                 rows={1}
-                className="flex-1 resize-none bg-transparent text-sm text-surface-100 placeholder:text-surface-600 outline-none disabled:opacity-40 py-2.5 leading-relaxed"
+                className="flex-1 resize-none bg-transparent text-sm text-slate-800 placeholder:text-slate-400 outline-none disabled:opacity-40 py-2.5 leading-relaxed"
               />
 
               {/* Send / Stop */}
               {isGenerating ? (
                 <button
                   onClick={handleStop}
-                  className="flex-shrink-0 rounded-xl bg-red-500/15 p-2.5 text-red-400 hover:bg-red-500/25 transition-all duration-200"
+                  className="flex-shrink-0 rounded-xl bg-red-50 p-2.5 text-red-500 hover:bg-red-100 border border-red-200 transition-all duration-200"
                   title="Stop generating"
                 >
                   <Square size={18} />
@@ -273,7 +334,7 @@ export function ChatPanel({ modelStatus, onTitleUpdate }: Props) {
                 <button
                   onClick={handleSend}
                   disabled={!input.trim() || !isOnline}
-                  className="flex-shrink-0 rounded-xl bg-deepseek-600 p-2.5 text-white transition-all duration-200 hover:bg-deepseek-500 disabled:opacity-30 disabled:hover:bg-deepseek-600 shadow-lg shadow-deepseek-600/20"
+                  className="flex-shrink-0 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500 p-2.5 text-white transition-all duration-200 hover:from-indigo-500 hover:to-indigo-400 disabled:opacity-20 disabled:hover:from-indigo-600 disabled:hover:to-indigo-500 shadow-lg shadow-indigo-200/50"
                   title="Send message"
                 >
                   <Send size={18} />
@@ -282,32 +343,32 @@ export function ChatPanel({ modelStatus, onTitleUpdate }: Props) {
             </div>
 
             {/* Bottom bar */}
-            <div className="flex items-center justify-between border-t border-surface-800/30 px-4 py-2 text-[11px] text-surface-600">
+            <div className="flex items-center justify-between border-t border-slate-100 px-4 py-2 text-[11px] text-slate-400">
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-1.5">
-                  <Sparkles size={11} />
-                  <span>DeepSeek-R1-1.5B</span>
+                  <Sparkles size={11} className="text-indigo-500/60" />
+                  <span>DeepSeek-R1-7B Fine-Tuned</span>
                 </div>
                 <button
                   onClick={() => setSettings((prev) => ({ ...prev, useRAG: !prev.useRAG }))}
                   className={`flex items-center gap-1 px-2 py-0.5 rounded-md transition-all text-[10px] font-medium ${
                     settings.useRAG
-                      ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
-                      : "bg-surface-800/50 text-surface-500 border border-surface-700/30"
+                      ? "bg-emerald-50 text-emerald-600 border border-emerald-200"
+                      : "bg-slate-50 text-slate-400 border border-slate-200"
                   }`}
                 >
                   <Brain size={10} />
                   {settings.useRAG ? "RAG ON" : "RAG OFF"}
                 </button>
               </div>
-              <span>
+              <span className="text-slate-400">
                 Temp {settings.temperature} · Top-P {settings.topP} · Max{" "}
                 {settings.maxTokens}
               </span>
             </div>
           </div>
 
-          <p className="mt-2 text-center text-[10px] text-surface-700">
+          <p className="mt-2.5 text-center text-[10px] text-slate-400">
             Shift+Enter for new line · Enter to send · Model may produce inaccurate responses
           </p>
         </div>

@@ -1,7 +1,12 @@
 """
-FastAPI Backend Server for Cortex Lab - DeepSeek-R1-1.5B
-Serves the model via REST API + Server-Sent Events (streaming)
+FastAPI Backend Server for Cortex Lab — Fine-Tuned DeepSeek-R1-7B
+Serves the 15-stage curriculum fine-tuned model via REST API + Server-Sent Events (streaming).
 Includes full Agentic RAG system with memory, retrieval, and multi-agent reasoning.
+
+Model: DeepSeek-R1-Distill-Qwen-7B fine-tuned across 15 stages:
+  Faithfulness → Agentic → Causal → Self-RAG → Belief → Summarization →
+  Dialogue → LongContext → DPO → UserStyle → ORPO → RAFT → FunctionCalling →
+  RFT → SPIN
 """
 
 import os
@@ -10,6 +15,7 @@ import time
 import json
 import asyncio
 import uuid
+import traceback
 from datetime import datetime
 from typing import Optional, List
 from contextlib import asynccontextmanager
@@ -29,8 +35,43 @@ from src.engine import rag_engine
 
 # ── Configuration ────────────────────────────────────────────────────────────
 
-MODEL_NAME = os.environ.get("MODEL_NAME", "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B")
-USE_4BIT   = os.environ.get("USE_4BIT", "false").lower() == "true"  # Disabled for 1.5B model
+# Fine-tuned model path — auto-detect latest merged stage
+FINE_TUNED_BASE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "fine_tuned")
+
+def _find_latest_merged_model():
+    """Find the latest merged model from our fine-tuning pipeline."""
+    # Check stages in reverse order (15 → 1) for the latest merged model
+    stage_names = [
+        "stage15_spin", "stage14_rft", "stage13_function_calling",
+        "stage12_raft", "stage11_orpo", "stage10_user_style",
+        "stage9_dpo", "stage8_longcontext", "stage7_dialogue",
+        "stage6_summarization", "stage5_belief", "stage4_selfrag",
+        "stage3_causal", "stage2_agentic", "stage1_faithfulness",
+    ]
+    for stage in stage_names:
+        merged_path = os.path.join(FINE_TUNED_BASE, stage, "merged")
+        if os.path.exists(merged_path) and os.path.exists(os.path.join(merged_path, "config.json")):
+            print(f"  🎯 Found fine-tuned model: {stage}/merged")
+            return merged_path
+    return None
+
+_fine_tuned_path = _find_latest_merged_model()
+MODEL_NAME = os.environ.get("MODEL_NAME",
+    _fine_tuned_path if _fine_tuned_path else "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B"
+)
+
+def _count_completed_stages():
+    """Count how many training stages have completed."""
+    count = 0
+    for i in range(1, 16):
+        stage_dirs = [d for d in os.listdir(FINE_TUNED_BASE) if d.startswith(f"stage{i}_")]
+        for sd in stage_dirs:
+            meta = os.path.join(FINE_TUNED_BASE, sd, "training_meta.json")
+            if os.path.exists(meta):
+                count += 1
+    return count
+
+USE_4BIT   = os.environ.get("USE_4BIT", "true").lower() == "true"   # Default ON for 7B
 USE_8BIT   = os.environ.get("USE_8BIT", "false").lower() == "true"
 HOST       = os.environ.get("HOST", "0.0.0.0")
 PORT       = int(os.environ.get("PORT", "8000"))
@@ -49,11 +90,11 @@ async def lifespan(app: FastAPI):
     global model, tokenizer, model_loaded, model_info
 
     print("\n" + "=" * 64)
-    print("  Cortex Lab  ·  DeepSeek-R1-1.5B  ·  FastAPI Backend")
+    print("  Cortex Lab  ·  Fine-Tuned DeepSeek-R1-7B  ·  FastAPI Backend")
     print("=" * 64 + "\n")
 
     # ── Tokenizer ────────────────────────────────────────────────────────
-    print("[1/2] Loading tokenizer …")
+    print(f"[1/2] Loading tokenizer from: {MODEL_NAME[:80]}…")
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -108,17 +149,25 @@ async def lifespan(app: FastAPI):
     gpu_name = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"
     gpu_mem  = f"{torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB" if torch.cuda.is_available() else "N/A"
 
+    completed_stages = _count_completed_stages()
+    model_display_name = "DeepSeek-R1-7B (Fine-Tuned)" if _fine_tuned_path else "DeepSeek-R1-Distill-Qwen-7B"
+
     model_info = {
-        "name": MODEL_NAME,
-        "parameters": "14B",
+        "name": model_display_name,
+        "parameters": "7B",
         "quantization": quant,
         "device": gpu_name,
         "gpu_memory": gpu_mem,
         "max_context": 32768,
         "load_time_seconds": round(elapsed, 1),
+        "fine_tuned": _fine_tuned_path is not None,
+        "training_stages_completed": completed_stages,
+        "model_path": MODEL_NAME[:80],
+        "base_model": "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
     }
 
     print(f"  ✓ Model loaded in {elapsed:.1f}s  ({quant} on {gpu_name})")
+    print(f"  ✓ Fine-tuned: {_fine_tuned_path is not None} ({completed_stages}/15 stages)")
     print(f"\n  Server ready → http://{HOST}:{PORT}\n")
 
     # ── Initialize RAG Engine ────────────────────────────────────────────
@@ -139,8 +188,8 @@ async def lifespan(app: FastAPI):
 # ── FastAPI app ──────────────────────────────────────────────────────────────
 
 app = FastAPI(
-    title="DeepSeek-R1 API",
-    version="1.0.0",
+    title="Cortex Lab — Fine-Tuned DeepSeek-R1-7B Agentic RAG API",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
@@ -197,6 +246,19 @@ class MemoryIngestRequest(BaseModel):
 class MemorySearchRequest(BaseModel):
     query: str
     top_k: int = 10
+
+class ModelInfoResponse(BaseModel):
+    """Detailed model information for the frontend."""
+    name: str
+    parameters: str
+    quantization: str
+    device: str
+    gpu_memory: str
+    max_context: int
+    load_time_seconds: float
+    fine_tuned: bool
+    training_stages_completed: int
+    base_model: str
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -360,7 +422,7 @@ async def chat(req: ChatRequest):
 
     return ChatResponse(
         id=f"msg-{uuid.uuid4().hex[:12]}",
-        model=MODEL_NAME,
+        model=model_info.get("name", MODEL_NAME),
         created=int(time.time()),
         content=content or "I'm not sure how to respond to that.",
         thinking=thinking,
@@ -436,7 +498,8 @@ async def _stream_generate(prompt: str, req: ChatRequest):
 
 @app.post("/api/rag/chat")
 async def rag_chat(req: RAGChatRequest):
-    """RAG-enhanced chat: uses memory retrieval + multi-agent reasoning."""
+    """RAG-enhanced chat: uses memory retrieval + multi-agent reasoning.
+    Supports both streaming and non-streaming modes."""
     if not model_loaded:
         raise HTTPException(503, "Model is still loading.")
     if not rag_engine.initialized:
@@ -448,6 +511,14 @@ async def rag_chat(req: RAGChatRequest):
 
     history = [{"role": m.role, "content": m.content} for m in req.messages[:-1]]
 
+    # ── Streaming RAG ────────────────────────────────────────────────────
+    if req.stream:
+        return StreamingResponse(
+            _stream_rag_generate(user_message, history, req),
+            media_type="text/event-stream",
+        )
+
+    # ── Non-streaming RAG ────────────────────────────────────────────────
     try:
         result = await rag_engine.rag_chat(
             user_message=user_message,
@@ -457,7 +528,7 @@ async def rag_chat(req: RAGChatRequest):
 
         return {
             "id": f"rag-{uuid.uuid4().hex[:12]}",
-            "model": MODEL_NAME,
+            "model": model_info.get("name", MODEL_NAME),
             "created": int(time.time()),
             "content": result.get("answer", ""),
             "thinking": result.get("thinking", ""),
@@ -470,9 +541,121 @@ async def rag_chat(req: RAGChatRequest):
         }
     except Exception as e:
         print(f"  ❌ RAG error: {e}")
-        import traceback
         traceback.print_exc()
         raise HTTPException(500, f"RAG processing error: {str(e)}")
+
+
+async def _stream_rag_generate(user_message: str, history: list, req: RAGChatRequest):
+    """
+    Stream RAG-enhanced chat.
+    1. Run RAG pipeline to get evidence + thinking (non-streamed)
+    2. Stream the final answer generation token by token with evidence context
+    """
+    msg_id = f"rag-{uuid.uuid4().hex[:12]}"
+
+    try:
+        # Step 1: Run RAG pipeline for evidence retrieval (fast, no generation)
+        rag_result = await rag_engine.rag_retrieve(
+            user_message=user_message,
+            session_id=req.session_id,
+            conversation_history=history,
+        )
+
+        evidence = rag_result.get("evidence", [])
+        agents_used = rag_result.get("agents_used", [])
+        confidence = rag_result.get("confidence", 0)
+        query_analysis = rag_result.get("query_analysis", {})
+        thinking = rag_result.get("thinking", "")
+
+        # Send metadata first
+        meta_chunk = {
+            "id": msg_id,
+            "delta": "",
+            "rag_meta": {
+                "evidence": evidence,
+                "agents_used": agents_used,
+                "confidence": confidence,
+                "query_analysis": query_analysis,
+                "thinking": thinking,
+            }
+        }
+        yield f"data: {json.dumps(meta_chunk)}\n\n"
+
+        # Step 2: Build prompt with evidence context for streaming generation
+        evidence_texts = [e.get("content", "")[:250] for e in evidence[:5]]
+        evidence_block = "\n".join(f"[{i+1}] {e}" for i, e in enumerate(evidence_texts))
+
+        rag_prompt = f"""<|im_start|>system
+You are Cortex Lab, a personal AI memory and reasoning assistant.
+Answer the user's question using the provided evidence from their memories.
+Use inline citations [1], [2] etc. to reference specific memories.
+If the evidence is insufficient, honestly say so — never fabricate information.
+Keep responses focused and concise.
+<|im_end|>
+<|im_start|>user
+{user_message}
+
+Evidence from memories:
+{evidence_block if evidence_block else "No relevant memories found."}
+<|im_end|>
+<|im_start|>assistant
+"""
+
+        inputs = tokenizer(rag_prompt, return_tensors="pt", truncation=True, max_length=4096)
+        if torch.cuda.is_available():
+            inputs = {k: v.cuda() for k, v in inputs.items()}
+
+        streamer = TextIteratorStreamer(tokenizer, skip_prompt=True, skip_special_tokens=True)
+
+        stop_token_ids = [tokenizer.eos_token_id]
+        for stop_str in ["User:", "<|im_end|>", "<|endoftext|>"]:
+            try:
+                ids = tokenizer.encode(stop_str, add_special_tokens=False)
+                if ids:
+                    stop_token_ids.append(ids[0])
+            except Exception:
+                pass
+
+        gen_kwargs = {
+            **inputs,
+            "max_new_tokens": min(req.max_tokens, 1024),
+            "temperature": max(req.temperature, 0.01),
+            "top_p": req.top_p,
+            "do_sample": req.temperature > 0,
+            "pad_token_id": tokenizer.eos_token_id,
+            "eos_token_id": stop_token_ids,
+            "repetition_penalty": 1.2,
+            "streamer": streamer,
+        }
+
+        thread = Thread(target=model.generate, kwargs=gen_kwargs)
+        thread.start()
+
+        accumulated = ""
+        for token_text in streamer:
+            accumulated += token_text
+            should_stop = False
+            for pattern in _STOP_PATTERNS:
+                if pattern in accumulated:
+                    safe_part = accumulated[:accumulated.index(pattern)]
+                    leftover = safe_part[len(accumulated) - len(token_text):]
+                    if leftover:
+                        chunk = {"id": msg_id, "delta": leftover}
+                        yield f"data: {json.dumps(chunk)}\n\n"
+                    should_stop = True
+                    break
+            if should_stop:
+                break
+            chunk = {"id": msg_id, "delta": token_text}
+            yield f"data: {json.dumps(chunk)}\n\n"
+            await asyncio.sleep(0)
+
+        yield f"data: {json.dumps({'id': msg_id, 'delta': '', 'done': True})}\n\n"
+        thread.join()
+
+    except Exception as e:
+        error_chunk = {"id": msg_id, "delta": f"\n\n⚠️ RAG streaming error: {str(e)}", "done": True}
+        yield f"data: {json.dumps(error_chunk)}\n\n"
 
 
 # ── Memory Management Endpoints ─────────────────────────────────────────────

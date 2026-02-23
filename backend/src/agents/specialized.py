@@ -1,11 +1,11 @@
 """
 Specialized Agents for Cortex Lab Agentic RAG
-Each agent handles a specific type of reasoning:
-- TimelineAgent: temporal/chronological queries
-- CausalAgent: why/cause-effect reasoning
-- ReflectionAgent: belief evolution and patterns
-- PlanningAgent: complex multi-step decomposition
-- ArbitrationAgent: conflict resolution
+Each agent leverages fine-tuned model capabilities:
+- TimelineAgent: temporal/chronological queries + faithful generation (Stage 1)
+- CausalAgent: cause-effect reasoning via causal_reason (Stage 3)
+- ReflectionAgent: belief evolution via detect_belief_change (Stage 5)
+- PlanningAgent: complex multi-step decomposition + RAFT (Stage 12)
+- ArbitrationAgent: conflict resolution with faithful citations
 """
 
 import time
@@ -35,12 +35,16 @@ class BaseAgent:
         parts = []
         for i, r in enumerate(results[:max_items]):
             ts = r.memory.timestamp.strftime("%Y-%m-%d %H:%M") if r.memory.timestamp else "Unknown"
-            parts.append(f"[Memory {i+1}] ({ts}, {r.memory.memory_type.value}, score: {r.score:.2f})\n{r.memory.content}")
+            parts.append(f"[{i+1}] ({ts}, {r.memory.memory_type.value}, score: {r.score:.2f})\n{r.memory.content}")
         return "\n\n".join(parts) if parts else "No relevant memories found."
+
+    def _evidence_texts(self, results: List[RetrievalResult], max_items: int = 5) -> List[str]:
+        """Extract plain text snippets for LLM methods."""
+        return [r.memory.content[:300] for r in results[:max_items]]
 
 
 class TimelineAgent(BaseAgent):
-    """Handles temporal queries: 'When did X happen?', 'What was I doing in June?'"""
+    """Handles temporal queries using faithful generation (Stage 1 fine-tuning)."""
 
     def __init__(self, llm: LocalLLM, retriever: HybridRetriever):
         super().__init__("timeline", llm, retriever)
@@ -54,24 +58,27 @@ class TimelineAgent(BaseAgent):
         # Sort results by timestamp
         results.sort(key=lambda r: r.memory.timestamp)
 
-        evidence_text = self._format_evidence(results, max_items=8)
+        evidence = self._evidence_texts(results, max_items=8)
 
-        # Generate timeline narrative
-        prompt = f"""You are Cortex Lab, an AI memory assistant. Based on the user's stored memories below,
-provide a chronological narrative answering the question.
-
-Focus on the timeline, sequence of events, and temporal patterns.
-If there are no relevant memories or insufficient context, honestly say so — never fabricate information.
-Keep your answer concise and focused.
-
-Question: {query.raw_query}
-
-Memories (chronological):
-{evidence_text}
-
-Answer:"""
-
-        answer = self.llm.generate(prompt, max_tokens=400, temperature=0.3)
+        # Use faithful generation (Stage 1) for grounded timeline narrative
+        if evidence and evidence[0] != "No relevant memories found.":
+            answer = self.llm.generate_faithful(
+                query.raw_query, evidence,
+                session_context="Focus on the timeline, sequence of events, and temporal patterns."
+            )
+        else:
+            answer = self.llm.generate(
+                f"""<|im_start|>system
+You are Cortex Lab, an AI memory assistant. The user asked about a timeline
+but no relevant memories were found. Say so honestly.
+<|im_end|>
+<|im_start|>user
+{query.raw_query}
+<|im_end|>
+<|im_start|>assistant
+""",
+                max_tokens=200, temperature=0.3
+            )
 
         elapsed = (time.time() - t0) * 1000
         return AgentResponse(
@@ -79,13 +86,13 @@ Answer:"""
             answer=answer,
             evidence=results[:5],
             confidence=min(0.5 + len(results) * 0.05, 0.95),
-            reasoning_trace=f"Timeline agent: retrieved {len(results)} memories, sorted chronologically",
+            reasoning_trace=f"Timeline agent: retrieved {len(results)} memories, sorted chronologically, faithful generation",
             processing_time_ms=elapsed,
         )
 
 
 class CausalAgent(BaseAgent):
-    """Handles causal queries: 'Why did I do X?', 'What led to Y?'"""
+    """Handles causal queries using causal_reason (Stage 3 fine-tuning)."""
 
     def __init__(self, llm: LocalLLM, retriever: HybridRetriever):
         super().__init__("causal", llm, retriever)
@@ -95,28 +102,22 @@ class CausalAgent(BaseAgent):
 
         results = await self.retriever.retrieve(query, top_k=15)
 
-        evidence_text = self._format_evidence(results, max_items=8)
+        evidence = self._evidence_texts(results, max_items=8)
 
-        prompt = f"""You are Cortex Lab, an AI memory assistant specialized in causal reasoning.
-Analyze the user's stored memories to find cause-and-effect relationships.
+        # Use fine-tuned causal reasoning (Stage 3)
+        if evidence:
+            answer = self.llm.causal_reason(query.raw_query, evidence)
+        else:
+            answer = "I don't have enough stored memories to trace a causal chain for this question."
 
-For the question below, identify:
-1. The main event/decision
-2. What led to it (causes, influences, preceding events)
-3. What resulted from it (consequences, effects)
-
-If you can trace a causal chain, present it step by step.
-If there's insufficient evidence, honestly say so — never fabricate information.
-Keep your answer concise and focused.
-
-Question: {query.raw_query}
-
-Relevant Memories:
-{evidence_text}
-
-Answer:"""
-
-        answer = self.llm.generate(prompt, max_tokens=500, temperature=0.3)
+        # If causal reasoning is thin, supplement with faithful generation
+        if len(answer.strip()) < 50 and evidence:
+            supplement = self.llm.generate_faithful(
+                query.raw_query, evidence,
+                session_context="Identify cause-and-effect relationships."
+            )
+            if len(supplement.strip()) > len(answer.strip()):
+                answer = supplement
 
         elapsed = (time.time() - t0) * 1000
         return AgentResponse(
@@ -124,13 +125,13 @@ Answer:"""
             answer=answer,
             evidence=results[:5],
             confidence=min(0.4 + len(results) * 0.06, 0.90),
-            reasoning_trace=f"Causal agent: analyzed {len(results)} memories for cause-effect chains",
+            reasoning_trace=f"Causal agent: analyzed {len(results)} memories with causal_reason (Stage 3)",
             processing_time_ms=elapsed,
         )
 
 
 class ReflectionAgent(BaseAgent):
-    """Handles reflective queries: 'How did my thinking change?', 'What patterns do I see?'"""
+    """Handles reflective queries using belief change detection (Stage 5 fine-tuning)."""
 
     def __init__(self, llm: LocalLLM, retriever: HybridRetriever):
         super().__init__("reflection", llm, retriever)
@@ -143,27 +144,33 @@ class ReflectionAgent(BaseAgent):
         # Sort by time to see evolution
         results.sort(key=lambda r: r.memory.timestamp)
 
-        evidence_text = self._format_evidence(results, max_items=10)
+        evidence = self._evidence_texts(results, max_items=10)
 
-        prompt = f"""You are Cortex Lab, an AI memory assistant specializing in self-reflection and pattern analysis.
-Analyze the user's stored memories to identify:
+        # Try belief change detection if we have enough temporal spread
+        belief_analysis = ""
+        if len(results) >= 2:
+            earliest = results[0].memory.content[:200]
+            latest = results[-1].memory.content[:200]
+            topic = query.topics[0] if query.topics else query.raw_query[:50]
 
-1. How their thinking/beliefs evolved over time
-2. Recurring patterns or themes
-3. Key turning points or realizations
-4. Contradictions or changes in stance
+            try:
+                delta = self.llm.detect_belief_change(earliest, latest, topic)
+                change_type = delta.get("change_type", "unknown")
+                explanation = delta.get("explanation", "")
+                if explanation:
+                    belief_analysis = f"\n\n**Belief Evolution ({change_type}):** {explanation}"
+            except Exception:
+                pass
 
-If there are no relevant memories, honestly say so — never fabricate information.
-Keep your answer concise and focused.
-
-Question: {query.raw_query}
-
-Memories (chronological):
-{evidence_text}
-
-Answer:"""
-
-        answer = self.llm.generate(prompt, max_tokens=500, temperature=0.3)
+        # Generate reflection with faithful grounding
+        if evidence:
+            answer = self.llm.generate_faithful(
+                query.raw_query, evidence,
+                session_context="Analyze patterns, evolution, and turning points in these memories."
+            )
+            answer += belief_analysis
+        else:
+            answer = "I don't have enough stored memories to identify patterns or changes for this query."
 
         elapsed = (time.time() - t0) * 1000
         return AgentResponse(
@@ -171,13 +178,13 @@ Answer:"""
             answer=answer,
             evidence=results[:5],
             confidence=min(0.4 + len(results) * 0.04, 0.85),
-            reasoning_trace=f"Reflection agent: analyzed {len(results)} memories for patterns and evolution",
+            reasoning_trace=f"Reflection agent: analyzed {len(results)} memories + belief change detection (Stage 5)",
             processing_time_ms=elapsed,
         )
 
 
 class PlanningAgent(BaseAgent):
-    """Handles complex multi-step queries requiring decomposition."""
+    """Handles complex multi-step queries with RAFT distractor-awareness (Stage 12)."""
 
     def __init__(self, llm: LocalLLM, retriever: HybridRetriever):
         super().__init__("planning", llm, retriever)
@@ -202,29 +209,9 @@ class PlanningAgent(BaseAgent):
             all_results.extend(results)
 
             if results:
-                evidence = self._format_evidence(results, max_items=3)
-                sub_answer = self.llm.generate(
-                    f"Based on these memories, briefly answer: {sq}\n\nMemories:\n{evidence}\n\nAnswer:",
-                    max_tokens=150, temperature=0.3
-                )
+                evidence = self._evidence_texts(results, max_items=3)
+                sub_answer = self.llm.generate_faithful(sq, evidence)
                 sub_answers.append(f"Q: {sq}\nA: {sub_answer}")
-
-        # Synthesize final answer
-        combined_context = "\n\n".join(sub_answers) if sub_answers else "No sub-answers generated."
-
-        prompt = f"""You are Cortex Lab, an AI memory assistant. The following sub-questions were answered
-from the user's stored memories. Synthesize a comprehensive final answer.
-If there are no relevant memories, honestly say so — never fabricate information.
-Keep your answer concise and focused.
-
-Original Question: {query.raw_query}
-
-Sub-Question Answers:
-{combined_context}
-
-Answer:"""
-
-        answer = self.llm.generate(prompt, max_tokens=500, temperature=0.3)
 
         # Deduplicate results
         seen = set()
@@ -234,20 +221,41 @@ Answer:"""
                 seen.add(r.memory.id)
                 unique_results.append(r)
 
+        # RAFT-aware synthesis: separate oracle docs from distractors
+        if len(unique_results) >= 3:
+            # Top-scored are oracle, lower-scored are potential distractors
+            sorted_results = sorted(unique_results, key=lambda r: r.score, reverse=True)
+            oracle_docs = [r.memory.content[:250] for r in sorted_results[:3]]
+            distractor_docs = [r.memory.content[:250] for r in sorted_results[3:6]]
+
+            final_answer = self.llm.raft_generate(
+                query.raw_query, oracle_docs, distractor_docs
+            )
+        elif sub_answers:
+            # Synthesize from sub-answers with faithful generation
+            combined_context = "\n\n".join(sub_answers)
+            evidence = self._evidence_texts(unique_results, max_items=5)
+            final_answer = self.llm.generate_faithful(
+                query.raw_query, evidence,
+                session_context=combined_context
+            )
+        else:
+            final_answer = "I don't have enough stored memories to answer this complex question."
+
         elapsed = (time.time() - t0) * 1000
         return AgentResponse(
             agent_name=self.name,
-            answer=answer,
+            answer=final_answer,
             evidence=unique_results[:5],
             confidence=min(0.5 + len(unique_results) * 0.03, 0.90),
-            reasoning_trace=f"Planning agent: decomposed into {len(sub_queries)} sub-queries, retrieved {len(unique_results)} unique memories",
+            reasoning_trace=f"Planning agent: decomposed into {len(sub_queries)} sub-queries, {len(unique_results)} unique memories, RAFT synthesis",
             sub_queries_used=sub_queries,
             processing_time_ms=elapsed,
         )
 
 
 class ArbitrationAgent(BaseAgent):
-    """Handles conflicting information and belief resolution."""
+    """Handles conflicting information with faithful citation-based resolution."""
 
     def __init__(self, llm: LocalLLM, retriever: HybridRetriever):
         super().__init__("arbitration", llm, retriever)
@@ -257,28 +265,35 @@ class ArbitrationAgent(BaseAgent):
 
         results = await self.retriever.retrieve(query, top_k=15)
 
-        evidence_text = self._format_evidence(results, max_items=8)
+        evidence = self._evidence_texts(results, max_items=8)
 
-        prompt = f"""You are Cortex Lab, an AI memory assistant specializing in resolving conflicts
-and contradictions in the user's stored memories.
+        # Use faithful generation with explicit conflict-resolution framing
+        if evidence:
+            answer = self.llm.generate_faithful(
+                query.raw_query, evidence,
+                session_context=(
+                    "Identify contradictions in the evidence. Determine which is most likely "
+                    "correct based on recency, confidence, and context. Explain the evolution "
+                    "from old belief to new belief. Cite evidence with [1], [2], etc."
+                )
+            )
+        else:
+            answer = "I don't have enough stored memories to compare or resolve conflicts for this query."
 
-Analyze the memories below and:
-1. Identify any contradicting information
-2. Determine which is most likely correct (based on recency, confidence, context)
-3. Explain the evolution from old belief to new belief
-4. If no contradiction exists, explain the consistent thread
-
-If there are no relevant memories, honestly say so — never fabricate information.
-Keep your answer concise and focused.
-
-Question: {query.raw_query}
-
-Memories:
-{evidence_text}
-
-Answer:"""
-
-        answer = self.llm.generate(prompt, max_tokens=400, temperature=0.3)
+        # Also run belief change detection if we have temporal spread
+        if len(results) >= 2:
+            results_sorted = sorted(results, key=lambda r: r.memory.timestamp)
+            earliest = results_sorted[0].memory.content[:200]
+            latest = results_sorted[-1].memory.content[:200]
+            topic = query.topics[0] if query.topics else query.raw_query[:50]
+            try:
+                delta = self.llm.detect_belief_change(earliest, latest, topic)
+                change_type = delta.get("change_type", "")
+                explanation = delta.get("explanation", "")
+                if explanation and change_type in ("contradiction", "refinement"):
+                    answer += f"\n\n**Belief Change ({change_type}):** {explanation}"
+            except Exception:
+                pass
 
         elapsed = (time.time() - t0) * 1000
         return AgentResponse(
@@ -286,6 +301,6 @@ Answer:"""
             answer=answer,
             evidence=results[:5],
             confidence=0.7,
-            reasoning_trace=f"Arbitration agent: analyzed {len(results)} memories for conflicts",
+            reasoning_trace=f"Arbitration agent: analyzed {len(results)} memories with faithful generation + belief detection",
             processing_time_ms=elapsed,
         )

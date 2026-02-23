@@ -183,7 +183,7 @@ export function KnowledgeGraph({ onBack }: { onBack: () => void }) {
       ctx.beginPath();
       ctx.moveTo(source.x, source.y);
       ctx.lineTo(target.x, target.y);
-      ctx.strokeStyle = "rgba(100, 116, 139, 0.2)";
+      ctx.strokeStyle = "rgba(100, 116, 139, 0.15)";
       ctx.lineWidth = Math.max(1, (edge.weight || 0.5) * 2);
       ctx.stroke();
 
@@ -192,7 +192,7 @@ export function KnowledgeGraph({ onBack }: { onBack: () => void }) {
         const mx = (source.x + target.x) / 2;
         const my = (source.y + target.y) / 2;
         ctx.font = "9px Inter, sans-serif";
-        ctx.fillStyle = "rgba(148, 163, 184, 0.5)";
+        ctx.fillStyle = "rgba(100, 116, 139, 0.6)";
         ctx.textAlign = "center";
         ctx.fillText(edge.relation, mx, my - 4);
       }
@@ -218,13 +218,13 @@ export function KnowledgeGraph({ onBack }: { onBack: () => void }) {
       ctx.arc(x, y, size, 0, Math.PI * 2);
       ctx.fillStyle = color;
       ctx.fill();
-      ctx.strokeStyle = isSelected ? "#ffffff" : color + "80";
+      ctx.strokeStyle = isSelected ? "#4f46e5" : color + "80";
       ctx.lineWidth = isSelected ? 2 : 1;
       ctx.stroke();
 
       // Label
       ctx.font = "11px Inter, sans-serif";
-      ctx.fillStyle = "#e2e8f0";
+      ctx.fillStyle = "#334155";
       ctx.textAlign = "center";
       ctx.fillText(node.label, x, y + size + 14);
     }
@@ -302,23 +302,23 @@ export function KnowledgeGraph({ onBack }: { onBack: () => void }) {
   };
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden bg-surface-950">
+    <div className="flex flex-1 flex-col overflow-hidden bg-white">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-surface-800/50 px-4 py-3">
+      <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3.5">
         <div className="flex items-center gap-3">
           <button
             onClick={onBack}
-            className="rounded-lg p-1.5 text-surface-500 hover:text-surface-300 hover:bg-surface-800/50 transition-colors"
+            className="rounded-lg p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all duration-200"
           >
             <ArrowLeft size={18} />
           </button>
-          <div className="flex items-center gap-2">
-            <Network size={18} className="text-deepseek-400" />
-            <h2 className="text-sm font-semibold text-surface-200">
+          <div className="flex items-center gap-2.5">
+            <Network size={18} className="text-indigo-500" />
+            <h2 className="text-sm font-semibold text-slate-700">
               Knowledge Graph
             </h2>
             {graphData && (
-              <span className="text-[10px] text-surface-500 bg-surface-800/60 px-2 py-0.5 rounded-md">
+              <span className="text-[10px] text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-lg">
                 {graphData.nodes.length} nodes · {graphData.edges.length} edges
               </span>
             )}
@@ -327,30 +327,30 @@ export function KnowledgeGraph({ onBack }: { onBack: () => void }) {
         <div className="flex items-center gap-1">
           <button
             onClick={() => setZoom((z) => Math.min(5, z * 1.2))}
-            className="p-1.5 rounded-lg text-surface-500 hover:text-surface-300 hover:bg-surface-800/50 transition-colors"
+            className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all duration-200"
           >
-            <ZoomIn size={16} />
+            <ZoomIn size={15} />
           </button>
           <button
             onClick={() => setZoom((z) => Math.max(0.1, z * 0.8))}
-            className="p-1.5 rounded-lg text-surface-500 hover:text-surface-300 hover:bg-surface-800/50 transition-colors"
+            className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all duration-200"
           >
-            <ZoomOut size={16} />
+            <ZoomOut size={15} />
           </button>
           <button
             onClick={() => {
               setZoom(1);
               setPan({ x: 0, y: 0 });
             }}
-            className="p-1.5 rounded-lg text-surface-500 hover:text-surface-300 hover:bg-surface-800/50 transition-colors"
+            className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all duration-200"
           >
-            <Maximize2 size={16} />
+            <Maximize2 size={15} />
           </button>
           <button
             onClick={loadGraph}
-            className="p-1.5 rounded-lg text-surface-500 hover:text-surface-300 hover:bg-surface-800/50 transition-colors"
+            className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all duration-200"
           >
-            <RefreshCw size={16} />
+            <RefreshCw size={15} />
           </button>
         </div>
       </div>
@@ -368,23 +368,23 @@ export function KnowledgeGraph({ onBack }: { onBack: () => void }) {
         >
           {loading ? (
             <div className="absolute inset-0 flex items-center justify-center">
-              <Loader2 size={24} className="animate-spin text-deepseek-400" />
+              <Loader2 size={24} className="animate-spin text-indigo-500" />
             </div>
           ) : graphData && graphData.nodes.length === 0 ? (
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-surface-500">
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400 fade-in">
               <Network size={40} className="mb-3 opacity-30" />
-              <p className="text-sm">No graph data yet</p>
-              <p className="text-xs mt-1">
+              <p className="text-sm font-medium">No graph data yet</p>
+              <p className="text-xs mt-1 text-slate-400">
                 Chat with Cortex Lab to build the knowledge graph
               </p>
             </div>
           ) : (
-            <canvas ref={canvasRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
+            <canvas ref={canvasRef} className="w-full h-full cursor-grab active:cursor-grabbing bg-slate-50" />
           )}
 
           {/* Legend */}
-          <div className="absolute bottom-3 left-3 bg-surface-900/90 backdrop-blur-sm border border-surface-800/50 rounded-lg p-3">
-            <p className="text-[10px] text-surface-500 mb-1.5 font-medium">Node Types</p>
+          <div className="absolute bottom-3 left-3 bg-white/80 backdrop-blur-xl rounded-xl border border-slate-200 p-3 shadow-lg">
+            <p className="text-[10px] text-slate-500 mb-2 font-semibold tracking-wider uppercase">Node Types</p>
             <div className="flex flex-wrap gap-2">
               {Object.entries(typeColors)
                 .filter(([k]) => k !== "default")
@@ -394,7 +394,7 @@ export function KnowledgeGraph({ onBack }: { onBack: () => void }) {
                       className="w-2.5 h-2.5 rounded-full"
                       style={{ backgroundColor: color }}
                     />
-                    <span className="text-[9px] text-surface-400 capitalize">
+                    <span className="text-[9px] text-slate-500 capitalize">
                       {type}
                     </span>
                   </div>
@@ -405,21 +405,21 @@ export function KnowledgeGraph({ onBack }: { onBack: () => void }) {
 
         {/* Node Details Panel */}
         {selectedNode && (
-          <div className="w-64 border-l border-surface-800/50 bg-surface-900/50 p-4 space-y-3 overflow-y-auto">
+          <div className="w-64 border-l border-slate-200 bg-white/90 backdrop-blur-xl p-4 space-y-3 overflow-y-auto fade-in">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-surface-200">
+              <h3 className="text-sm font-semibold text-slate-800">
                 {selectedNode.label}
               </h3>
               <button
                 onClick={() => setSelectedNode(null)}
-                className="text-surface-500 hover:text-surface-300 text-xs"
+                className="text-slate-400 hover:text-slate-600 text-xs transition-colors"
               >
                 ✕
               </button>
             </div>
             <div className="space-y-2">
               <div className="flex items-center gap-2">
-                <span className="text-[10px] text-surface-500">Type</span>
+                <span className="text-[10px] text-slate-400">Type</span>
                 <span
                   className="px-1.5 py-0.5 rounded text-[9px] font-medium capitalize"
                   style={{
@@ -432,22 +432,22 @@ export function KnowledgeGraph({ onBack }: { onBack: () => void }) {
               </div>
               {selectedNode.mentions && (
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-surface-500">Mentions</span>
-                  <span className="text-xs text-surface-300">{selectedNode.mentions}</span>
+                  <span className="text-[10px] text-slate-400">Mentions</span>
+                  <span className="text-xs text-slate-600">{selectedNode.mentions}</span>
                 </div>
               )}
               {selectedNode.firstSeen && (
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-surface-500">First Seen</span>
-                  <span className="text-xs text-surface-300">
+                  <span className="text-[10px] text-slate-400">First Seen</span>
+                  <span className="text-xs text-slate-600">
                     {new Date(selectedNode.firstSeen).toLocaleDateString()}
                   </span>
                 </div>
               )}
               {selectedNode.lastSeen && (
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-surface-500">Last Seen</span>
-                  <span className="text-xs text-surface-300">
+                  <span className="text-[10px] text-slate-400">Last Seen</span>
+                  <span className="text-xs text-slate-600">
                     {new Date(selectedNode.lastSeen).toLocaleDateString()}
                   </span>
                 </div>

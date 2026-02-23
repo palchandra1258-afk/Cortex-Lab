@@ -87,48 +87,48 @@ export function MemoryBrowser({ onBack }: { onBack: () => void }) {
   };
 
   const emotionColors: Record<string, string> = {
-    happy: "text-emerald-400 bg-emerald-500/10",
-    sad: "text-blue-400 bg-blue-500/10",
-    angry: "text-red-400 bg-red-500/10",
-    anxious: "text-amber-400 bg-amber-500/10",
-    neutral: "text-surface-400 bg-surface-800/50",
-    excited: "text-purple-400 bg-purple-500/10",
-    confused: "text-orange-400 bg-orange-500/10",
-    hopeful: "text-cyan-400 bg-cyan-500/10",
-    frustrated: "text-red-300 bg-red-500/10",
+    happy: "text-emerald-600 bg-emerald-50",
+    sad: "text-blue-600 bg-blue-50",
+    angry: "text-red-600 bg-red-50",
+    anxious: "text-amber-600 bg-amber-50",
+    neutral: "text-slate-500 bg-slate-100",
+    excited: "text-purple-600 bg-purple-50",
+    confused: "text-orange-600 bg-orange-50",
+    hopeful: "text-cyan-600 bg-cyan-50",
+    frustrated: "text-red-500 bg-red-50",
   };
 
   const typeColors: Record<string, string> = {
-    episodic: "bg-deepseek-500/10 text-deepseek-400",
-    semantic: "bg-purple-500/10 text-purple-400",
-    procedural: "bg-amber-500/10 text-amber-400",
-    reflective: "bg-emerald-500/10 text-emerald-400",
+    episodic: "bg-indigo-50 text-indigo-600 border border-indigo-200",
+    semantic: "bg-purple-50 text-purple-600 border border-purple-200",
+    procedural: "bg-amber-50 text-amber-600 border border-amber-200",
+    reflective: "bg-emerald-50 text-emerald-600 border border-emerald-200",
   };
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden bg-surface-950">
+    <div className="flex flex-1 flex-col overflow-hidden bg-white">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-surface-800/50 px-4 py-3">
+      <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3.5">
         <div className="flex items-center gap-3">
           <button
             onClick={onBack}
-            className="rounded-lg p-1.5 text-surface-500 hover:text-surface-300 hover:bg-surface-800/50 transition-colors"
+            className="rounded-lg p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all duration-200"
           >
             <ArrowLeft size={18} />
           </button>
-          <div className="flex items-center gap-2">
-            <Brain size={18} className="text-deepseek-400" />
-            <h2 className="text-sm font-semibold text-surface-200">
+          <div className="flex items-center gap-2.5">
+            <Brain size={18} className="text-indigo-500" />
+            <h2 className="text-sm font-semibold text-slate-700">
               Memory Browser
             </h2>
-            <span className="text-[10px] text-surface-500 bg-surface-800/60 px-2 py-0.5 rounded-md">
+            <span className="text-[10px] text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-lg">
               {total} memories
             </span>
           </div>
         </div>
         <button
           onClick={() => setShowIngest(!showIngest)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-deepseek-600 text-white text-xs font-medium hover:bg-deepseek-500 transition-colors"
+          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500 text-white text-xs font-medium hover:from-indigo-500 hover:to-indigo-400 transition-all duration-200 shadow-lg shadow-indigo-200/50"
         >
           <Plus size={14} />
           Add Memory
@@ -136,43 +136,43 @@ export function MemoryBrowser({ onBack }: { onBack: () => void }) {
       </div>
 
       {/* Search + Ingest */}
-      <div className="px-4 py-3 space-y-3 border-b border-surface-800/30">
+      <div className="px-5 py-3.5 space-y-3 border-b border-slate-200">
         <div className="flex gap-2">
           <div className="flex-1 relative">
             <Search
               size={14}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-500"
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
             />
             <input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSearch()}
               placeholder="Search memories semantically..."
-              className="w-full rounded-lg bg-surface-900/60 border border-surface-800/50 pl-9 pr-3 py-2 text-sm text-surface-200 placeholder:text-surface-600 outline-none focus:border-deepseek-500/40"
+              className="w-full rounded-xl bg-slate-50 border border-slate-200 pl-9 pr-3 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 outline-none focus:border-indigo-300 focus:bg-white transition-all duration-200"
             />
           </div>
           <button
             onClick={handleSearch}
             disabled={isSearching}
-            className="px-4 py-2 rounded-lg bg-surface-800/60 text-surface-300 text-sm hover:bg-surface-700/60 transition-colors disabled:opacity-50"
+            className="px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-600 text-sm hover:bg-slate-100 hover:text-slate-800 transition-all duration-200 disabled:opacity-50"
           >
             {isSearching ? <Loader2 size={14} className="animate-spin" /> : "Search"}
           </button>
         </div>
 
         {showIngest && (
-          <div className="flex gap-2">
+          <div className="flex gap-2 fade-in">
             <textarea
               value={newMemory}
               onChange={(e) => setNewMemory(e.target.value)}
               placeholder="Enter a memory to store... (e.g., 'Had a great meeting with Sarah about Project X today')"
               rows={2}
-              className="flex-1 rounded-lg bg-surface-900/60 border border-surface-800/50 px-3 py-2 text-sm text-surface-200 placeholder:text-surface-600 outline-none focus:border-deepseek-500/40 resize-none"
+              className="flex-1 rounded-xl bg-slate-50 border border-slate-200 px-3.5 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 outline-none focus:border-indigo-300 transition-all duration-200 resize-none"
             />
             <button
               onClick={handleIngest}
               disabled={ingesting || !newMemory.trim()}
-              className="px-4 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-500 transition-colors disabled:opacity-50"
+              className="px-4 rounded-xl bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-500 transition-all duration-200 disabled:opacity-50 shadow-lg shadow-emerald-200/50"
             >
               {ingesting ? <Loader2 size={14} className="animate-spin" /> : "Store"}
             </button>
@@ -181,22 +181,22 @@ export function MemoryBrowser({ onBack }: { onBack: () => void }) {
       </div>
 
       {/* Memory List */}
-      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
+      <div className="flex-1 overflow-y-auto px-5 py-3 space-y-2.5">
         {loading ? (
           <div className="flex items-center justify-center py-12">
-            <Loader2 size={24} className="animate-spin text-deepseek-400" />
+            <Loader2 size={24} className="animate-spin text-indigo-500" />
           </div>
         ) : memories.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-surface-500">
+          <div className="flex flex-col items-center justify-center py-12 text-slate-400 fade-in">
             <Brain size={40} className="mb-3 opacity-30" />
-            <p className="text-sm">No memories yet</p>
-            <p className="text-xs mt-1">Chat with Cortex Lab or add memories manually</p>
+            <p className="text-sm font-medium">No memories yet</p>
+            <p className="text-xs mt-1 text-slate-400">Chat with Cortex Lab or add memories manually</p>
           </div>
         ) : (
           memories.map((mem) => (
             <div
               key={mem.id}
-              className="group rounded-xl border border-surface-800/40 bg-surface-900/30 p-4 hover:border-surface-700/50 transition-all"
+              className="group rounded-2xl border border-slate-200 bg-white p-4 hover:border-slate-300 hover:bg-slate-50/50 transition-all duration-200 card-hover"
             >
               {/* Top row: type + emotion + time */}
               <div className="flex items-center gap-2 mb-2">
@@ -214,22 +214,22 @@ export function MemoryBrowser({ onBack }: { onBack: () => void }) {
                 >
                   {mem.emotion}
                 </span>
-                <span className="flex items-center gap-1 text-[10px] text-surface-600">
+                <span className="flex items-center gap-1 text-[10px] text-slate-400">
                   <Clock size={9} />
                   {new Date(mem.timestamp).toLocaleString()}
                 </span>
-                <span className="text-[10px] text-surface-600 ml-auto">
+                <span className="text-[10px] text-slate-400 ml-auto">
                   importance: {(mem.importance * 100).toFixed(0)}%
                 </span>
                 {mem.score !== undefined && (
-                  <span className="text-[10px] text-deepseek-400">
+                  <span className="text-[10px] text-indigo-500">
                     match: {(mem.score * 100).toFixed(0)}%
                   </span>
                 )}
               </div>
 
               {/* Content */}
-              <p className="text-sm text-surface-200 leading-relaxed mb-2">
+              <p className="text-sm text-slate-700 leading-relaxed mb-2">
                 {mem.content}
               </p>
 
@@ -238,7 +238,7 @@ export function MemoryBrowser({ onBack }: { onBack: () => void }) {
                 {mem.topics?.map((topic) => (
                   <span
                     key={topic}
-                    className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-deepseek-500/10 text-deepseek-400 text-[9px]"
+                    className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-600 text-[9px] border border-indigo-200"
                   >
                     <Tag size={8} />
                     {topic}
@@ -247,7 +247,7 @@ export function MemoryBrowser({ onBack }: { onBack: () => void }) {
                 {mem.entities?.map((entity) => (
                   <span
                     key={entity}
-                    className="px-1.5 py-0.5 rounded bg-surface-800/60 text-surface-400 text-[9px]"
+                    className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 text-[9px]"
                   >
                     {entity}
                   </span>
@@ -258,7 +258,7 @@ export function MemoryBrowser({ onBack }: { onBack: () => void }) {
               <div className="flex justify-end mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
                 <button
                   onClick={() => handleDelete(mem.id)}
-                  className="flex items-center gap-1 text-[10px] text-red-400/60 hover:text-red-400 transition-colors"
+                  className="flex items-center gap-1 text-[10px] text-red-400 hover:text-red-500 transition-colors"
                 >
                   <Trash2 size={10} />
                   Delete

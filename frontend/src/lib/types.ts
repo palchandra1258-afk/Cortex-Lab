@@ -129,6 +129,9 @@ export interface ModelStatus {
     gpu_memory?: string;
     max_context?: number;
     load_time_seconds?: number;
+    fine_tuned?: boolean;
+    training_stages_completed?: number;
+    base_model?: string;
   };
 }
 

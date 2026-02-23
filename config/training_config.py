@@ -21,8 +21,9 @@ BASE_MODEL = str(_LOCAL_7B) if _LOCAL_7B.exists() and (_LOCAL_7B / "config.json"
 
 ULTRA_MODEL = "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B"  # optional upgrade path
 
-OUTPUT_DIR = "./fine_tuned"
-TRAINING_DATA_DIR = "./training_data"
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+OUTPUT_DIR = str(_PROJECT_ROOT / "fine_tuned")
+TRAINING_DATA_DIR = str(_PROJECT_ROOT / "training_data")
 
 # =============================================================================
 # 4-BIT QUANTIZATION (QLoRA — NF4 double quantization)
@@ -155,6 +156,71 @@ LORA_CONFIGS = {
         "r": 16,
         "lora_alpha": 32,
         "target_modules": ["q_proj", "v_proj"],   # Attention only for style
+        "lora_dropout": 0.05,
+        "bias": "none",
+        "task_type": "CAUSAL_LM",
+    },
+
+    # ─── EXTENDED PIPELINE (Stages 11-15) ─────────────────────────────────
+    # These stages run AFTER stages 1-10 complete.
+    # They build on the stage-10 merged checkpoint.
+
+    # Stage 11: ORPO — Odds-Ratio Preference Optimization
+    # Replaces DPO with a simpler, reference-free preference alignment
+    # Medium rank, attention-only — preference alignment, not skill learning
+    "stage11_orpo": {
+        "r": 32,
+        "lora_alpha": 64,
+        "target_modules": ATTN_ONLY,
+        "lora_dropout": 0.05,
+        "bias": "none",
+        "task_type": "CAUSAL_LM",
+    },
+
+    # Stage 12: RAFT — Retrieval-Augmented Fine Tuning
+    # Teaches the model to reason over noisy retrieval context (distractor docs)
+    # High rank — complex input filtering + reasoning + citation
+    "stage12_raft": {
+        "r": 64,
+        "lora_alpha": 128,
+        "target_modules": ALL_MODULES,
+        "lora_dropout": 0.05,
+        "bias": "none",
+        "task_type": "CAUSAL_LM",
+    },
+
+    # Stage 13: Function-Calling Fine-Tuning
+    # Trains structured JSON tool-call output with strict schema adherence
+    # High rank — structured output needs broad adaptation
+    "stage13_function_calling": {
+        "r": 64,
+        "lora_alpha": 128,
+        "target_modules": ALL_MODULES,
+        "lora_dropout": 0.05,
+        "bias": "none",
+        "task_type": "CAUSAL_LM",
+    },
+
+    # Stage 14: Rejection Sampling Fine-Tuning (RFT)
+    # SFT on best-of-N filtered examples — only the highest quality outputs
+    # Medium rank — refinement stage, not new skill learning
+    "stage14_rft": {
+        "r": 32,
+        "lora_alpha": 64,
+        "target_modules": ALL_MODULES,
+        "lora_dropout": 0.03,
+        "bias": "none",
+        "task_type": "CAUSAL_LM",
+    },
+
+    # Stage 15: SPIN — Self-Play Improvement
+    # Iterative self-play: model learns to distinguish its own outputs
+    # from ground truth, closing the gap each round
+    # Medium rank, attention-focused — subtle distribution alignment
+    "stage15_spin": {
+        "r": 32,
+        "lora_alpha": 64,
+        "target_modules": ATTN_ONLY,
         "lora_dropout": 0.05,
         "bias": "none",
         "task_type": "CAUSAL_LM",
@@ -374,6 +440,119 @@ TRAINING_CONFIGS = {
         "group_by_length": True,
         "dataloader_num_workers": 2,
         "max_seq_length": 1024,                    # Shorter for style examples
+    },
+
+    # ─── EXTENDED PIPELINE (Stages 11-15) ─────────────────────────────────
+
+    "stage11_orpo": {
+        # ORPO uses ORPOConfig — reference-free preference optimization
+        # Key advantage over DPO: no reference model needed → half the memory
+        "learning_rate": 8e-6,                     # Higher than DPO — ORPO has built-in regularization
+        "num_train_epochs": 1,                     # Single pass for preference alignment
+        "per_device_train_batch_size": 1,          # ORPO needs 2x memory (chosen + rejected)
+        "gradient_accumulation_steps": 8,
+        "gradient_checkpointing": True,
+        "warmup_ratio": 0.1,
+        "beta": 0.1,                               # ORPO odds ratio weight
+        "max_length": 1024,
+        "bf16": True,
+        "logging_steps": 10,
+        "save_strategy": "epoch",
+        "save_total_limit": 2,
+        "max_seq_length": 1024,
+        "optim": "adamw_torch",
+        "weight_decay": 0.01,
+        "max_grad_norm": 1.0,
+    },
+
+    "stage12_raft": {
+        # RAFT: Retrieval-Augmented Fine Tuning
+        # Model sees oracle doc + N distractor docs and must identify & use the right one
+        "num_train_epochs": 2,
+        "per_device_train_batch_size": 1,          # Longer inputs: query + 5 docs
+        "gradient_accumulation_steps": 16,         # Effective batch = 16
+        "gradient_checkpointing": True,
+        "learning_rate": 1e-4,                     # Moderate — new skill
+        "warmup_ratio": 0.05,
+        "lr_scheduler_type": "cosine",
+        "optim": "adamw_torch",
+        "weight_decay": 0.01,
+        "max_grad_norm": 1.0,
+        "logging_steps": 10,
+        "save_strategy": "epoch",
+        "save_total_limit": 2,
+        "bf16": True,
+        "torch_compile": False,
+        "group_by_length": True,
+        "dataloader_num_workers": 2,
+        "max_seq_length": 2048,                    # Multi-doc context needs 2048
+    },
+
+    "stage13_function_calling": {
+        # Function-Calling FT: strict structured JSON output
+        "num_train_epochs": 3,
+        "per_device_train_batch_size": 2,
+        "gradient_accumulation_steps": 8,
+        "gradient_checkpointing": True,
+        "learning_rate": 1.5e-4,
+        "warmup_ratio": 0.05,
+        "lr_scheduler_type": "cosine",
+        "optim": "adamw_torch",
+        "weight_decay": 0.01,
+        "max_grad_norm": 1.0,
+        "logging_steps": 10,
+        "save_strategy": "epoch",
+        "save_total_limit": 2,
+        "bf16": True,
+        "torch_compile": False,
+        "group_by_length": True,
+        "dataloader_num_workers": 2,
+        "max_seq_length": 1024,
+    },
+
+    "stage14_rft": {
+        # Rejection Sampling FT: train only on best-of-N outputs
+        # Conservative LR — this is a refinement stage, not skill learning
+        "num_train_epochs": 2,
+        "per_device_train_batch_size": 2,
+        "gradient_accumulation_steps": 8,
+        "gradient_checkpointing": True,
+        "learning_rate": 5e-5,                     # Very conservative — polishing
+        "warmup_ratio": 0.05,
+        "lr_scheduler_type": "cosine",
+        "optim": "adamw_torch",
+        "weight_decay": 0.01,
+        "max_grad_norm": 0.5,                      # Tight clipping for stability
+        "logging_steps": 10,
+        "save_strategy": "epoch",
+        "save_total_limit": 2,
+        "bf16": True,
+        "torch_compile": False,
+        "group_by_length": True,
+        "dataloader_num_workers": 2,
+        "max_seq_length": 1024,
+    },
+
+    "stage15_spin": {
+        # SPIN Self-Play: DPO-like training where rejected = model's own output
+        # Uses DPO-style config with prompt/chosen/rejected
+        "learning_rate": 5e-6,                     # Very conservative — subtle alignment
+        "num_train_epochs": 1,                     # Single pass per SPIN iteration
+        "per_device_train_batch_size": 1,          # Preference pairs need 2x memory
+        "gradient_accumulation_steps": 8,
+        "gradient_checkpointing": True,
+        "warmup_ratio": 0.1,
+        "beta": 0.1,                               # KL divergence penalty (DPO-style)
+        "max_length": 1024,
+        "max_prompt_length": 512,
+        "bf16": True,
+        "logging_steps": 10,
+        "save_strategy": "epoch",
+        "save_total_limit": 2,
+        "max_seq_length": 1024,
+        "optim": "adamw_torch",
+        "weight_decay": 0.01,
+        "max_grad_norm": 1.0,
     },
 }
 

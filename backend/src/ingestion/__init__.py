@@ -1,13 +1,15 @@
 """
 Memory Ingestion Pipeline for Cortex Lab
-Processes raw text into rich CausalMemoryObjects with:
+Fine-tuned model integration for enriched memory processing:
 - Memory type classification
 - Emotion detection
 - Entity extraction
 - Topic extraction
-- Proposition decomposition
-- Contextual chunking
-- Embedding generation
+- Proposition decomposition (atomic facts, EMNLP 2024)
+- Contextual chunking (Anthropic-style)
+- Semantic chunking (sentence-boundary aware)
+- Embedding generation (BGE-large-en-v1.5, 1024d)
+- Belief evolution detection (Stage 5 fine-tuning)
 """
 
 import re
@@ -30,16 +32,17 @@ class MemoryIngestionPipeline:
     Full ingestion pipeline: raw text → enriched CausalMemoryObject → stored.
     
     Pipeline stages:
-    1. Text preprocessing
+    1. Text preprocessing + semantic chunking
     2. Memory type classification
     3. Emotion detection
     4. Entity extraction
     5. Topic extraction
     6. Importance scoring
-    7. Proposition decomposition
+    7. Proposition decomposition (atomic facts)
     8. Contextual prefix generation
-    9. Embedding generation
+    9. Embedding generation (BGE-large passage embedding)
     10. Storage (vector + metadata + graph)
+    11. Belief evolution detection (Stage 5 fine-tuning)
     """
 
     def __init__(self, llm: LocalLLM, embedding_model: EmbeddingModel,
@@ -107,9 +110,9 @@ class MemoryIngestionPipeline:
         if session_context:
             memory.context_prefix = self._generate_context_prefix(content, session_context)
 
-        # 9. Generate embedding (on contextual content)
+        # 9. Generate embedding (passage embedding for BGE asymmetric retrieval)
         embed_text = memory.context_prefix + " " + content if memory.context_prefix else content
-        embedding = self.embeddings.embed(embed_text)
+        embedding = self.embeddings.embed_passage(embed_text)
         memory.embedding = embedding.tolist()
 
         # 10. Store everything
@@ -139,7 +142,16 @@ class MemoryIngestionPipeline:
         # LLM fallback for ambiguous cases
         if self.llm.model is not None:
             result = self.llm.classify(
-                f"Classify this memory:\n\"{text[:200]}\"\n\nTypes: episodic (events/activities), semantic (facts/knowledge), procedural (processes/how-to), reflective (thoughts/realizations)",
+                f"""<|im_start|>system
+Classify this memory into one type.
+<|im_end|>
+<|im_start|>user
+"{text[:200]}"
+
+Types: episodic (events/activities), semantic (facts/knowledge), procedural (processes/how-to), reflective (thoughts/realizations)
+<|im_end|>
+<|im_start|>assistant
+""",
                 ["episodic", "semantic", "procedural", "reflective"],
                 default="episodic"
             )
@@ -254,13 +266,15 @@ class MemoryIngestionPipeline:
         if self.llm.model is not None and len(text) > 30:
             try:
                 result = self.llm.generate(
-                    f"""Decompose the following text into independent atomic facts.
-Each fact should be a single, self-contained statement that can be understood without context.
-Return one fact per line, no numbering.
-
-Text: "{text[:500]}"
-
-Atomic facts:""",
+                    f"""<|im_start|>system
+Decompose text into independent atomic facts.
+Each fact must be self-contained. One fact per line. No numbering.
+<|im_end|>
+<|im_start|>user
+{text[:500]}
+<|im_end|>
+<|im_start|>assistant
+""",
                     max_tokens=300,
                     temperature=0.1,
                 )
@@ -291,14 +305,19 @@ Atomic facts:""",
         """Generate contextual prefix using session context (Anthropic-style)."""
         if self.llm.model is not None and session_context:
             prefix = self.llm.generate(
-                f"""Given this conversation session context:
+                f"""<|im_start|>system
+Write a SHORT context (1-2 sentences) to situate this memory.
+Include who/what/when if relevant.
+<|im_end|>
+<|im_start|>user
+Session context:
 {session_context[:500]}
 
-And this specific memory:
+Memory:
 {content[:300]}
-
-Write a SHORT context (1-2 sentences) to situate this memory. Include who/what/when if relevant.
-Context:""",
+<|im_end|>
+<|im_start|>assistant
+""",
                 max_tokens=60,
                 temperature=0.2,
             )
@@ -393,10 +412,12 @@ Context:""",
     def _detect_belief_evolution(self, memory: CausalMemoryObject):
         """
         Detect belief contradictions/evolution when a new memory is ingested.
+        Uses fine-tuned detect_belief_change (Stage 5) when available.
+        
         Multi-stage pipeline per RAG-Architecture §9:
-        1. Semantic similarity: find memories about same topic (>0.85)
-        2. Stance detection: classify stance change
-        3. Temporal context: weight recency
+        1. Semantic similarity: find memories about same topic (>0.75)
+        2. Stance detection: classify stance change (keyword + LLM Stage 5)
+        3. Temporal context: weight recency, require minimum gap
         4. Classification: CONTRADICTION / REFINEMENT / EXPANSION / ABANDONMENT
         5. Storage as BeliefDelta
         """
@@ -421,28 +442,71 @@ Context:""",
             if old_memory.session_id == memory.session_id and memory.session_id:
                 continue
 
-            # Stage 2: Stance detection via keyword heuristics
-            stance = self._detect_stance(old_memory.content, memory.content)
-            if stance == "agree":
-                continue  # No belief change
-
             # Stage 3: Temporal context — require minimum time gap (1 day)
             time_gap = abs((memory.timestamp - old_memory.timestamp).total_seconds())
-            if time_gap < 86400:  # Less than 1 day apart
+            if time_gap < 86400:
                 continue
 
-            # Stage 4: Classify change type
-            if stance == "disagree":
-                change_type = BeliefChangeType.CONTRADICTION
-                confidence = min(sim_score + 0.1, 1.0)
-            elif stance == "expand":
-                change_type = BeliefChangeType.REFINEMENT
-                confidence = sim_score * 0.8
+            # Stage 2 + 4: Use fine-tuned LLM belief change detection (Stage 5) if available
+            topic = memory.topics[0] if memory.topics else "general"
+
+            if self.llm.model is not None:
+                try:
+                    delta_result = self.llm.detect_belief_change(
+                        old_memory.content[:300], memory.content[:300], topic
+                    )
+                    change_type_str = delta_result.get("change_type", "none").lower()
+                    explanation = delta_result.get("explanation", "")
+                    llm_confidence = delta_result.get("confidence", 0.5)
+
+                    type_map = {
+                        "contradiction": BeliefChangeType.CONTRADICTION,
+                        "refinement": BeliefChangeType.REFINEMENT,
+                        "reinforcement": BeliefChangeType.REINFORCEMENT,
+                        "new_belief": BeliefChangeType.NEW_BELIEF,
+                    }
+                    if change_type_str in type_map:
+                        change_type = type_map[change_type_str]
+                        confidence = llm_confidence
+                    elif change_type_str in ("none", "no_change"):
+                        continue
+                    else:
+                        # Fall back to keyword stance
+                        stance = self._detect_stance(old_memory.content, memory.content)
+                        if stance == "disagree":
+                            change_type = BeliefChangeType.CONTRADICTION
+                            confidence = min(sim_score + 0.1, 1.0)
+                        elif stance == "expand":
+                            change_type = BeliefChangeType.REFINEMENT
+                            confidence = sim_score * 0.8
+                        else:
+                            continue
+                except Exception:
+                    # LLM failed, fall back to keyword detection
+                    stance = self._detect_stance(old_memory.content, memory.content)
+                    if stance == "disagree":
+                        change_type = BeliefChangeType.CONTRADICTION
+                        confidence = min(sim_score + 0.1, 1.0)
+                    elif stance == "expand":
+                        change_type = BeliefChangeType.REFINEMENT
+                        confidence = sim_score * 0.8
+                    else:
+                        continue
+                    explanation = ""
             else:
-                continue
+                # No LLM: keyword-based stance detection
+                stance = self._detect_stance(old_memory.content, memory.content)
+                if stance == "disagree":
+                    change_type = BeliefChangeType.CONTRADICTION
+                    confidence = min(sim_score + 0.1, 1.0)
+                elif stance == "expand":
+                    change_type = BeliefChangeType.REFINEMENT
+                    confidence = sim_score * 0.8
+                else:
+                    continue
+                explanation = ""
 
             # Stage 5: Store BeliefDelta
-            topic = memory.topics[0] if memory.topics else "general"
             delta = BeliefDelta(
                 topic=topic,
                 old_belief_id=old_memory.id,

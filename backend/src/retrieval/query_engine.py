@@ -1,6 +1,6 @@
 """
 Query Intelligence Layer for Cortex Lab
-- Intent Detection
+- Intent Detection (keyword heuristics + LLM fallback via route_query Stage 2)
 - Complexity Scoring
 - Adaptive Routing
 - Multi-Query Generation (RAG-Fusion)
@@ -22,7 +22,9 @@ from src.llm import LocalLLM
 class QueryAnalyzer:
     """
     Analyzes queries to determine intent, complexity, and routing.
-    Uses keyword heuristics first, LLM fallback for ambiguous cases.
+    Uses keyword heuristics first, with LLM fallback for ambiguous cases.
+    The LLM fallback leverages route_query (Stage 2 fine-tuning) but is
+    deferred to the orchestrator for async execution.
     """
 
     # Intent keyword mappings
@@ -276,12 +278,16 @@ class QueryTransformer:
         if self.llm.model is None:
             return [query]  # Return original if no LLM
 
-        prompt = f"""Generate 3 different versions of the following question.
+        prompt = f"""<|im_start|>system
+Generate 3 different versions of the following question.
 Each version should preserve the meaning but use different wording.
-
-Original: {query}
-
-Version 1:"""
+Output one version per line, numbered 1-3.
+<|im_end|>
+<|im_start|>user
+{query}
+<|im_end|>
+<|im_start|>assistant
+1."""
 
         result = self.llm.generate(prompt, max_tokens=150, temperature=0.5)
         lines = [l.strip() for l in result.split("\n") if l.strip()]
@@ -300,12 +306,15 @@ Version 1:"""
         if self.llm.model is None:
             return ""
 
-        prompt = f"""Based on your memory, write a brief hypothetical answer (2-3 sentences) 
-to the following question. Write as if you're answering from personal memories.
-
-Question: {query}
-
-Answer:"""
+        prompt = f"""<|im_start|>system
+Write a brief hypothetical answer (2-3 sentences) to this question,
+as if answering from personal memories.
+<|im_end|>
+<|im_start|>user
+{query}
+<|im_end|>
+<|im_start|>assistant
+"""
 
         return self.llm.generate(prompt, max_tokens=100, temperature=0.4).strip()
 
@@ -314,12 +323,15 @@ Answer:"""
         if self.llm.model is None:
             return ""
 
-        prompt = f"""Given this specific question, generate ONE more general question 
+        prompt = f"""<|im_start|>system
+Given this specific question, generate ONE more general question
 that would provide useful background context.
-
-Specific question: {query}
-
-General question:"""
+<|im_end|>
+<|im_start|>user
+{query}
+<|im_end|>
+<|im_start|>assistant
+"""
 
         return self.llm.generate(prompt, max_tokens=50, temperature=0.3).strip()
 
@@ -328,12 +340,15 @@ General question:"""
         if self.llm.model is None:
             return [query]
 
-        prompt = f"""Break this complex question into 2-3 simpler sub-questions 
+        prompt = f"""<|im_start|>system
+Break this complex question into 2-3 simpler sub-questions
 that can each be answered independently.
-
-Complex question: {query}
-
-Sub-questions:
+Output one sub-question per line, numbered 1-3.
+<|im_end|>
+<|im_start|>user
+{query}
+<|im_end|>
+<|im_start|>assistant
 1."""
 
         result = self.llm.generate(prompt, max_tokens=150, temperature=0.3)

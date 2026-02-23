@@ -1,6 +1,7 @@
 """
 Cortex Lab RAG Engine — Central Integration Point
-Ties together all components: LLM, Embeddings, Storage, Agents, Cache, Ingestion.
+Fine-Tuned DeepSeek-R1-7B Agentic RAG with BGE-large-1024d + CrossEncoder reranking.
+Ties together all components: LLM, Embeddings, Reranker, Storage, Agents, Cache, Ingestion.
 Provides a single interface for the FastAPI server.
 """
 
@@ -13,7 +14,7 @@ from src.models import (
     CausalMemoryObject, MemoryQuery, OrchestratorResponse,
     RetrievalResult, BeliefDelta
 )
-from src.models.embeddings import EmbeddingModel
+from src.models.embeddings import EmbeddingModel, CrossEncoderReranker
 from src.llm import LocalLLM
 from src.storage.vector_store import VectorStore
 from src.storage.metadata_store import MetadataStore
@@ -31,16 +32,17 @@ class CortexRAGEngine:
     
     This is the single entry point that the FastAPI server uses.
     It initializes and wires together all subsystems:
-    - EmbeddingModel (sentence-transformers)
-    - VectorStore (FAISS)
+    - EmbeddingModel (BGE-large-en-v1.5, 1024d)
+    - CrossEncoderReranker (BGE-reranker-v2-m3)
+    - VectorStore (FAISS with hot/warm/cold tiers)
     - MetadataStore (DuckDB)
     - KnowledgeGraph (NetworkX)
-    - LocalLLM (DeepSeek-R1-1.5B interface)
+    - LocalLLM (Fine-Tuned DeepSeek-R1-7B interface)
     - QueryAnalyzer + QueryTransformer
-    - HybridRetriever (5-channel)
-    - AgentOrchestrator (5 specialized agents)
+    - HybridRetriever (5-channel + cross-encoder reranking)
+    - AgentOrchestrator (5 specialized agents + LLM routing + Self-RAG + FLARE)
     - MemoryIngestionPipeline
-    - MultiLevelCache
+    - MultiLevelCache (3-level)
     """
 
     def __init__(self, data_dir: str = "data"):
@@ -49,6 +51,7 @@ class CortexRAGEngine:
 
         # Components (initialized in init())
         self.embedding_model: Optional[EmbeddingModel] = None
+        self.reranker: Optional[CrossEncoderReranker] = None
         self.vector_store: Optional[VectorStore] = None
         self.metadata_store: Optional[MetadataStore] = None
         self.knowledge_graph: Optional[KnowledgeGraph] = None
@@ -71,53 +74,60 @@ class CortexRAGEngine:
         """
         t0 = time.time()
         print("\n" + "=" * 60)
-        print("  🧠 Initializing Cortex Lab RAG Engine")
+        print("  🧠 Initializing Cortex Lab RAG Engine v2.0")
+        print("  📦 BGE-large-1024d + CrossEncoder + Fine-Tuned 7B")
         print("=" * 60)
 
-        # 1. Embedding Model
-        print("\n[1/9] Embedding Model...")
+        # 1. Embedding Model (BGE-large-en-v1.5, 1024d)
+        print("\n[1/10] Embedding Model (BGE-large-en-v1.5)...")
         self.embedding_model = EmbeddingModel(device="cpu")
+        print(f"  → {self.embedding_model.dimension}d embeddings")
 
-        # 2. Vector Store
-        print("[2/9] Vector Store...")
+        # 2. Cross-Encoder Reranker (BGE-reranker-v2-m3)
+        print("[2/10] Cross-Encoder Reranker...")
+        self.reranker = CrossEncoderReranker(device="cpu")
+
+        # 3. Vector Store
+        print("[3/10] Vector Store...")
         self.vector_store = VectorStore(
             dimension=self.embedding_model.dimension,
             data_dir=f"{self.data_dir}/vectors"
         )
 
-        # 3. Metadata Store
-        print("[3/9] Metadata Store...")
+        # 4. Metadata Store
+        print("[4/10] Metadata Store...")
         self.metadata_store = MetadataStore(db_path=f"{self.data_dir}/cortex.duckdb")
 
-        # 4. Knowledge Graph
-        print("[4/9] Knowledge Graph...")
+        # 5. Knowledge Graph
+        print("[5/10] Knowledge Graph...")
         self.knowledge_graph = KnowledgeGraph(data_dir=f"{self.data_dir}/graph")
 
-        # 5. LLM Interface
-        print("[5/9] LLM Interface...")
+        # 6. LLM Interface (Fine-Tuned DeepSeek-R1-7B)
+        print("[6/10] LLM Interface (Fine-Tuned 7B)...")
         self.llm = LocalLLM(model=model, tokenizer=tokenizer)
 
-        # 6. Query Engine
-        print("[6/9] Query Engine...")
+        # 7. Query Engine
+        print("[7/10] Query Engine...")
         self.query_analyzer = QueryAnalyzer()
         self.query_transformer = QueryTransformer(self.llm, self.embedding_model)
 
-        # 7. Hybrid Retriever
-        print("[7/9] Hybrid Retriever...")
+        # 8. Hybrid Retriever (with cross-encoder reranker)
+        print("[8/10] Hybrid Retriever (5-channel + CrossEncoder)...")
         self.hybrid_retriever = HybridRetriever(
             self.embedding_model, self.vector_store,
-            self.metadata_store, self.knowledge_graph
+            self.metadata_store, self.knowledge_graph,
+            reranker=self.reranker,
         )
 
-        # 8. Agent Orchestrator
-        print("[8/9] Agent Orchestrator...")
+        # 9. Agent Orchestrator (LLM routing + Self-RAG + FLARE)
+        print("[9/10] Agent Orchestrator (Adaptive-RAG + Self-RAG + FLARE)...")
         self.orchestrator = AgentOrchestrator(
             self.llm, self.hybrid_retriever,
             self.query_analyzer, self.query_transformer
         )
 
-        # 9. Ingestion Pipeline
-        print("[9/9] Ingestion Pipeline + Cache...")
+        # 10. Ingestion Pipeline + Cache
+        print("[10/10] Ingestion Pipeline + Cache...")
         self.ingestion = MemoryIngestionPipeline(
             self.llm, self.embedding_model,
             self.vector_store, self.metadata_store,
@@ -133,7 +143,7 @@ class CortexRAGEngine:
 
         self.initialized = True
         elapsed = time.time() - t0
-        print(f"\n  ✅ RAG Engine ready in {elapsed:.1f}s")
+        print(f"\n  ✅ RAG Engine v2.0 ready in {elapsed:.1f}s")
         print(f"  📊 Memories: {self.metadata_store.count_memories()} | "
               f"Vectors: {self.vector_store.count()} | "
               f"Graph: {self.knowledge_graph.get_stats()}")
@@ -145,6 +155,81 @@ class CortexRAGEngine:
             self.llm.set_model(model, tokenizer)
 
     # ─── RAG-Enhanced Chat ───────────────────────────────────────────────
+
+    async def rag_retrieve(self, user_message: str, session_id: str = "",
+                            conversation_history: List[Dict] = None) -> Dict:
+        """
+        RAG retrieval-only: ingest, retrieve evidence, analyze query.
+        Does NOT generate the final answer — caller will stream generation.
+        Used by the streaming RAG endpoint.
+        """
+        if not self.initialized:
+            return {"evidence": [], "thinking": "", "agents_used": [], "confidence": 0, "query_analysis": {}}
+
+        # Set session
+        if not session_id:
+            session_id = f"session-{int(time.time())}"
+        self._current_session_id = session_id
+
+        # Build session context
+        session_context = ""
+        if conversation_history:
+            recent = conversation_history[-6:]
+            session_context = "\n".join(
+                f"{m.get('role', 'user')}: {m.get('content', '')[:200]}"
+                for m in recent
+            )
+
+        # 1. Ingest user message
+        try:
+            await self.ingestion.ingest(
+                content=user_message,
+                session_id=session_id,
+                source="chat",
+                session_context=session_context,
+            )
+            self.hybrid_retriever.invalidate_caches()
+        except Exception as e:
+            print(f"  ⚠ Ingestion error: {e}")
+
+        # 2. Check cache
+        cached, cache_level = self.cache.get(user_message)
+        if cached:
+            return cached
+
+        # 3. Run orchestrator for retrieval + analysis
+        response = await self.orchestrator.process(user_message, session_context)
+
+        # Format evidence for streaming endpoint
+        evidence = [
+            {
+                "content": e.memory.content[:300],
+                "score": round(e.score, 3),
+                "channel": e.channel,
+                "timestamp": e.memory.timestamp.isoformat(),
+                "memory_type": e.memory.memory_type.value,
+                "emotion": e.memory.emotion.value,
+                "entities": e.memory.entities[:5],
+            }
+            for e in response.evidence[:5]
+        ]
+
+        result = {
+            "evidence": evidence,
+            "thinking": response.thinking or "",
+            "agents_used": response.agents_used,
+            "confidence": round(response.confidence, 3),
+            "query_analysis": {
+                "intent": response.query_analysis.intent.value if response.query_analysis else "unknown",
+                "complexity": round(response.query_analysis.complexity, 2) if response.query_analysis else 0,
+                "routing": response.query_analysis.routing.value if response.query_analysis else "unknown",
+            },
+        }
+
+        # Cache the retrieval result
+        self.cache.set(user_message, result)
+
+        return result
 
     async def rag_chat(self, user_message: str, session_id: str = "",
                         conversation_history: List[Dict] = None) -> Dict:
@@ -244,6 +329,92 @@ class CortexRAGEngine:
         return result
 
     # ─── Memory Management ───────────────────────────────────────────────
+
+    async def rag_retrieve(self, user_message: str, session_id: str = "",
+                            conversation_history: List[Dict] = None) -> Dict:
+        """
+        RAG retrieval-only pipeline (no final generation).
+        Used for streaming mode: retrieves evidence + thinking, then lets server stream.
+        """
+        if not self.initialized:
+            return {"answer": "", "evidence": [], "thinking": "RAG system initializing..."}
+
+        t0 = time.time()
+
+        if not session_id:
+            session_id = f"session-{int(time.time())}"
+        self._current_session_id = session_id
+
+        session_context = ""
+        if conversation_history:
+            recent = conversation_history[-6:]
+            session_context = "\n".join(
+                f"{m.get('role', 'user')}: {m.get('content', '')[:200]}"
+                for m in recent
+            )
+
+        # Ingest user message as memory
+        memory = await self.ingestion.ingest(
+            content=user_message,
+            session_id=session_id,
+            source="chat",
+            session_context=session_context,
+        )
+
+        self.hybrid_retriever.invalidate_caches()
+
+        # Check cache
+        cached, cache_level = self.cache.get(user_message)
+        if cached:
+            cached["cache_hit"] = True
+            cached["cache_level"] = cache_level
+            return cached
+
+        # Run the orchestrator pipeline
+        response = await self.orchestrator.process(user_message, session_context)
+
+        # Format evidence (but don't generate final answer — caller will stream it)
+        result = {
+            "answer": response.answer,
+            "thinking": response.thinking,
+            "evidence": [
+                {
+                    "content": e.memory.content[:300],
+                    "score": round(e.score, 3),
+                    "channel": e.channel,
+                    "timestamp": e.memory.timestamp.isoformat(),
+                    "memory_type": e.memory.memory_type.value,
+                    "emotion": e.memory.emotion.value,
+                    "entities": e.memory.entities[:5],
+                }
+                for e in response.evidence[:5]
+            ],
+            "agents_used": response.agents_used,
+            "confidence": round(response.confidence, 3),
+            "reasoning_trace": response.reasoning_trace,
+            "query_analysis": {
+                "intent": response.query_analysis.intent.value if response.query_analysis else "unknown",
+                "complexity": round(response.query_analysis.complexity, 2) if response.query_analysis else 0,
+                "routing": response.query_analysis.routing.value if response.query_analysis else "unknown",
+            },
+            "processing_time_ms": round(response.processing_time_ms, 1),
+            "cache_hit": False,
+        }
+
+        # Cache result
+        self.cache.set(user_message, result)
+
+        # Store conversation turns
+        self.metadata_store.store_conversation_turn(
+            session_id=session_id,
+            role="user",
+            content=user_message,
+            memory_id=memory.id,
+        )
+
+        return result
+
+    # ─── Memory Management (continued) ───────────────────────────────────
 
     async def ingest_memory(self, content: str, source: str = "manual",
                              session_id: str = "") -> Dict:

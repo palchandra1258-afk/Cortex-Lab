@@ -1,11 +1,19 @@
 """
-Agent Orchestrator for Cortex Lab
+Agent Orchestrator for Cortex Lab — Fine-Tuned Model Integration
 Routes queries to specialized agents based on intent and complexity.
-Implements Adaptive-RAG routing + CRAG quality evaluation + Self-RAG reflection.
+Implements:
+  - Adaptive-RAG routing with LLM-based structured JSON routing (Stage 2)
+  - CRAG quality evaluation with multi-signal assessment
+  - Self-RAG reflection with ISREL/ISSUP/ISUSE critique tokens (Stage 4)
+  - FLARE: Forward-Looking Active Retrieval (EMNLP 2023)
+  - RAFT: Distractor-aware generation (Stage 12)
+  - Chain-of-Retrieval for complex multi-hop queries
+  - Function calling integration (Stage 13)
 """
 
 import asyncio
 import time
+import re
 from typing import Dict, List, Optional
 
 from src.models import (
@@ -20,14 +28,54 @@ from src.agents.specialized import (
 )
 
 
+# ─── Tool Registry for Function Calling (Stage 13) ──────────────────────────
+
+AVAILABLE_TOOLS = [
+    {
+        "name": "search_memories",
+        "description": "Search through stored memories by semantic similarity",
+        "parameters": {"query": "str", "top_k": "int (default 10)"},
+    },
+    {
+        "name": "search_by_time",
+        "description": "Find memories from a specific time period",
+        "parameters": {"start_date": "str (ISO format)", "end_date": "str (ISO format)"},
+    },
+    {
+        "name": "find_entity",
+        "description": "Look up information about a specific entity (person, place, project)",
+        "parameters": {"entity_name": "str"},
+    },
+    {
+        "name": "trace_causal_chain",
+        "description": "Trace cause-effect relationships for an event or decision",
+        "parameters": {"event": "str"},
+    },
+    {
+        "name": "detect_belief_evolution",
+        "description": "Check how beliefs about a topic have changed over time",
+        "parameters": {"topic": "str"},
+    },
+    {
+        "name": "summarize_topic",
+        "description": "Get a summary of all memories related to a topic",
+        "parameters": {"topic": "str"},
+    },
+]
+
+
 class AgentOrchestrator:
     """
-    Central orchestrator implementing Adaptive-RAG:
-    - Simple queries → No retrieval, direct LLM answer
-    - Moderate queries → Single agent
-    - Complex queries → Multi-agent with synthesis
+    Central orchestrator implementing Adaptive-RAG with fine-tuned model integration.
     
-    Post-retrieval: CRAG quality check + Self-RAG reflection loop.
+    Pipeline:
+    1. LLM-based structured routing (Stage 2) with keyword fallback
+    2. Query transformation (multi-query, HyDE, step-back, decomposition)
+    3. Agent execution (single or multi-agent)
+    4. CRAG quality evaluation (multi-signal)
+    5. Self-RAG ISREL/ISSUP/ISUSE reflection (Stage 4)
+    6. FLARE: Forward-looking active retrieval on low-confidence segments
+    7. RAFT: Distractor-aware final generation (Stage 12)
     """
 
     def __init__(self, llm: LocalLLM, retriever: HybridRetriever,
@@ -59,13 +107,7 @@ class AgentOrchestrator:
 
     async def process(self, raw_query: str, session_context: str = "") -> OrchestratorResponse:
         """
-        Full orchestration pipeline:
-        1. Analyze query (intent, complexity, routing)
-        2. Transform query (multi-query, HyDE, step-back)
-        3. Route to agent(s)
-        4. CRAG quality evaluation
-        5. Self-RAG reflection loop
-        6. Return final response
+        Full orchestration pipeline with fine-tuned model integration.
         """
         t0 = time.time()
         print(f"\n{'='*60}")
@@ -73,8 +115,11 @@ class AgentOrchestrator:
         print(f"  📝 Query: {raw_query[:80]}...")
         print(f"{'='*60}")
 
-        # 1. Analyze query
+        # 1. Analyze query (keyword heuristics + LLM-based routing)
         query = self.analyzer.analyze(raw_query)
+
+        # 1b. LLM-based routing enhancement (Stage 2 fine-tuning)
+        query = await self._llm_route_query(query, session_context)
 
         # 2. Transform query (add multi-query, HyDE, etc.)
         query = self.transformer.transform(query)
@@ -90,39 +135,92 @@ class AgentOrchestrator:
         # 4. CRAG quality evaluation
         response = await self._crag_evaluate(query, response)
 
-        # 5. Self-RAG reflection (if quality is not CORRECT)
-        if response.confidence < 0.7 and response.evidence:
-            response = await self._self_rag_reflect(query, response)
+        # 5. Self-RAG ISREL/ISSUP/ISUSE reflection (Stage 4)
+        if response.evidence and response.confidence < 0.75:
+            response = await self._self_rag_critique(query, response)
+
+        # 6. FLARE: Active retrieval on low-confidence segments
+        if response.confidence < 0.6 and response.evidence:
+            response = await self._flare_active_retrieval(query, response)
 
         response.query_analysis = query
         response.processing_time_ms = (time.time() - t0) * 1000
+
+        # Track token usage
+        response.token_usage = self.llm.get_stats()
 
         print(f"\n  ✅ Response ready: confidence={response.confidence:.2f}, "
               f"agents={response.agents_used}, time={response.processing_time_ms:.0f}ms\n")
 
         return response
 
+    async def _llm_route_query(self, query: MemoryQuery, session_context: str) -> MemoryQuery:
+        """Use fine-tuned LLM (Stage 2) for structured routing when keyword analysis is uncertain."""
+        if self.llm.model is None:
+            return query
+
+        # Only use LLM routing if keyword confidence is low
+        if query.complexity < 0.3 or query.complexity > 0.7:
+            return query  # High/low confidence — keyword routing is sufficient
+
+        try:
+            routing = self.llm.route_query(query.raw_query, session_context)
+
+            # Map LLM intent to our enum
+            intent_map = {
+                "temporal": QueryIntent.TEMPORAL,
+                "causal": QueryIntent.CAUSAL,
+                "reflective": QueryIntent.REFLECTIVE,
+                "factual": QueryIntent.FACTUAL,
+                "procedural": QueryIntent.PROCEDURAL,
+                "comparative": QueryIntent.COMPARATIVE,
+                "exploratory": QueryIntent.EXPLORATORY,
+            }
+            llm_intent = routing.get("intent", "").lower()
+            if llm_intent in intent_map:
+                query.intent = intent_map[llm_intent]
+
+            # Use LLM complexity if it disagrees significantly
+            llm_complexity = float(routing.get("complexity", query.complexity))
+            if abs(llm_complexity - query.complexity) > 0.2:
+                query.complexity = (query.complexity + llm_complexity) / 2.0
+
+            # Re-evaluate routing
+            if query.complexity < 0.3:
+                query.routing = RoutingStrategy.NO_RETRIEVAL
+            elif query.complexity < 0.6:
+                query.routing = RoutingStrategy.SINGLE_STEP
+            else:
+                query.routing = RoutingStrategy.MULTI_STEP
+
+            print(f"  🎯 LLM routing: intent={query.intent.value}, complexity={query.complexity:.2f}")
+        except Exception as e:
+            print(f"  ⚠ LLM routing failed: {e}, using keyword routing")
+
+        return query
+
     async def _handle_no_retrieval(self, query: MemoryQuery) -> OrchestratorResponse:
         """Handle simple queries that don't need memory retrieval."""
         print("  ⚡ Routing: NO_RETRIEVAL (simple query)")
 
         answer = self.llm.generate(
-            f"""You are Cortex Lab, a personal AI memory and reasoning assistant.
-Answer the following question concisely.
-If this is a personal question about the user (their name, age, preferences, etc.)
-and you don't have stored memories about it, honestly say you don't have that
-information yet and suggest they tell you so you can remember it.
+            f"""<|im_start|>system
+You are Cortex Lab, a personal AI memory and reasoning assistant.
+If this is a personal question about the user and you don't have stored memories
+about it, honestly say you don't have that information yet.
 Never fabricate personal details.
-
-Question: {query.raw_query}
-
-Answer:""",
+<|im_end|>
+<|im_start|>user
+{query.raw_query}
+<|im_end|>
+<|im_start|>assistant
+""",
             max_tokens=300, temperature=0.3
         )
 
         return OrchestratorResponse(
             answer=answer,
-            thinking="This is a simple query that doesn't require searching through memories.",
+            thinking="Simple query — no memory retrieval needed.",
             agents_used=["direct"],
             confidence=0.8,
             reasoning_trace="Direct LLM answer (no retrieval needed)",
@@ -154,8 +252,7 @@ Answer:""",
         )
 
     async def _handle_multi_step(self, query: MemoryQuery) -> OrchestratorResponse:
-        """Handle complex queries with multiple agents."""
-        # Determine which agents to use
+        """Handle complex queries with multiple agents + Chain-of-Retrieval."""
         primary_agent_name = self.intent_to_agent.get(query.intent, "planning")
         agent_names = [primary_agent_name]
 
@@ -167,7 +264,6 @@ Answer:""",
         elif query.intent == QueryIntent.TEMPORAL:
             agent_names.append("reflection")
 
-        # Always include planning for decomposed queries
         if "planning" not in agent_names and query.sub_queries:
             agent_names.append("planning")
 
@@ -181,7 +277,7 @@ Answer:""",
 
         agent_responses = await asyncio.gather(*tasks)
 
-        # Synthesize responses
+        # Combine all evidence and answers
         combined_answers = []
         all_evidence = []
         all_traces = []
@@ -191,23 +287,6 @@ Answer:""",
             all_evidence.extend(resp.evidence)
             all_traces.append(f"{name}: {resp.reasoning_trace}")
 
-        # LLM synthesis of multi-agent output
-        synthesis_prompt = f"""You are Cortex Lab, a personal AI memory assistant synthesizing information from multiple
-analysis perspectives about the user's stored memories.
-
-Question: {query.raw_query}
-
-Agent Analyses:
-{chr(10).join(combined_answers)}
-
-Provide a unified, comprehensive answer that combines insights from all analyses.
-Be concise but thorough. If there are no relevant memories, say so honestly.
-Never fabricate information.
-
-Answer:"""
-
-        final_answer = self.llm.generate(synthesis_prompt, max_tokens=500, temperature=0.3)
-
         # Deduplicate evidence
         seen = set()
         unique_evidence = []
@@ -215,6 +294,29 @@ Answer:"""
             if e.memory.id not in seen:
                 seen.add(e.memory.id)
                 unique_evidence.append(e)
+
+        # Use faithful generation (Stage 1) for synthesis with citations
+        evidence_texts = [e.memory.content[:250] for e in unique_evidence[:5]]
+        if evidence_texts:
+            final_answer = self.llm.generate_faithful(
+                query.raw_query, evidence_texts,
+                session_context="\n".join(combined_answers[:3])
+            )
+        else:
+            # Fallback synthesis
+            synthesis_prompt = f"""<|im_start|>system
+You are Cortex Lab, synthesizing multi-agent analysis of the user's memories.
+Be concise but thorough. If no relevant memories exist, say so honestly.
+<|im_end|>
+<|im_start|>user
+{query.raw_query}
+
+Agent Analyses:
+{chr(10).join(combined_answers)}
+<|im_end|>
+<|im_start|>assistant
+"""
+            final_answer = self.llm.generate(synthesis_prompt, max_tokens=500, temperature=0.3)
 
         avg_confidence = sum(r.confidence for r in agent_responses) / len(agent_responses)
 
@@ -236,10 +338,10 @@ Answer:"""
 
     async def _crag_evaluate(self, query: MemoryQuery, response: OrchestratorResponse) -> OrchestratorResponse:
         """
-        CRAG (Corrective RAG): Evaluate retrieval quality with multi-signal assessment.
+        CRAG (Corrective RAG): Multi-signal retrieval quality evaluation.
         → CORRECT: Use as is
         → AMBIGUOUS: Supplement with more retrieval
-        → INCORRECT: Refine query and re-retrieve
+        → INCORRECT: Refine and caveat
         """
         if not response.evidence:
             return response
@@ -249,7 +351,7 @@ Answer:"""
         max_score = max(r.score for r in response.evidence)
         evidence_count = len(response.evidence)
 
-        # Check entity coverage (do retrieved memories mention query entities?)
+        # Entity coverage check
         entity_coverage = 0.0
         if query.entities:
             matched = 0
@@ -269,121 +371,168 @@ Answer:"""
         )
 
         if quality_score > 0.55:
-            # CORRECT: Good retrieval quality
-            response.reasoning_trace += f" | CRAG: CORRECT (quality={quality_score:.2f})"
+            response.reasoning_trace += f" | CRAG: CORRECT (q={quality_score:.2f})"
             return response
         elif quality_score > 0.30:
-            # AMBIGUOUS: Try to supplement with additional retrieval
-            response.reasoning_trace += f" | CRAG: AMBIGUOUS (quality={quality_score:.2f})"
+            response.reasoning_trace += f" | CRAG: AMBIGUOUS (q={quality_score:.2f})"
             response.confidence *= 0.85
 
-            # Attempt supplementary retrieval with step-back query
+            # Supplementary retrieval with step-back query
             if query.step_back_query:
                 try:
-                    from src.models import MemoryQuery as MQ
-                    sb_query = MQ(
+                    sb_query = MemoryQuery(
                         raw_query=query.step_back_query,
                         intent=query.intent,
                         complexity=0.4,
                         embedding=self.retriever.embeddings.embed(query.step_back_query).tolist(),
                     )
                     extra_results = await self.retriever.retrieve(sb_query, top_k=5)
-                    # Add non-duplicate results
                     existing_ids = {r.memory.id for r in response.evidence}
+                    added = 0
                     for r in extra_results:
                         if r.memory.id not in existing_ids:
                             response.evidence.append(r)
                             existing_ids.add(r.memory.id)
-                    response.reasoning_trace += f" → supplemented +{len(extra_results)} from step-back"
+                            added += 1
+                    response.reasoning_trace += f" → +{added} from step-back"
                 except Exception:
                     pass
         else:
-            # INCORRECT: Low quality, caveat the answer
-            response.reasoning_trace += f" | CRAG: INCORRECT (quality={quality_score:.2f})"
+            response.reasoning_trace += f" | CRAG: INCORRECT (q={quality_score:.2f})"
             response.confidence *= 0.55
             response.answer = (
-                "⚠️ *Note: Limited relevant memories found. The following answer is based on "
-                "partial information:*\n\n" + response.answer
+                "⚠️ *Limited relevant memories found. Based on partial information:*\n\n"
+                + response.answer
             )
 
         return response
 
-    async def _self_rag_reflect(self, query: MemoryQuery, response: OrchestratorResponse) -> OrchestratorResponse:
+    async def _self_rag_critique(self, query: MemoryQuery,
+                                  response: OrchestratorResponse) -> OrchestratorResponse:
         """
-        Self-RAG: Generate → Critique → Revise loop.
-        Max 2 iterations for latency budget.
-        Evaluates: relevance, faithfulness, completeness.
+        Self-RAG with ISREL/ISSUP/ISUSE critique tokens (Stage 4 fine-tuning).
+        Generate → Critique → Revise loop (max 2 iterations).
         """
         if self.llm.model is None:
             return response
 
-        # Format evidence for critique
-        evidence_summary = ""
-        for i, r in enumerate(response.evidence[:3]):
-            evidence_summary += f"[{i+1}] {r.memory.content[:150]}\n"
-
-        critique_prompt = f"""Evaluate this answer about someone's personal memories.
-
-Question: {query.raw_query}
-Answer: {response.answer[:400]}
-
-Supporting evidence:
-{evidence_summary}
-
-Rate each criterion 1-10:
-1. RELEVANCE: Does the answer address the question?
-2. FAITHFULNESS: Is the answer grounded in the evidence?
-3. COMPLETENESS: Does it cover the key aspects?
-
-Respond with three numbers separated by commas (e.g., 8,7,6):"""
+        evidence_texts = [r.memory.content[:200] for r in response.evidence[:5]]
+        if not evidence_texts:
+            return response
 
         try:
-            score_text = self.llm.generate(critique_prompt, max_tokens=20, temperature=0.1)
-            import re
-            numbers = re.findall(r'\d+', score_text)
+            # Use fine-tuned ISREL/ISSUP/ISUSE critique
+            critique = self.llm.self_rag_critique(
+                query.raw_query, response.answer, evidence_texts
+            )
 
-            if len(numbers) >= 3:
-                relevance = min(int(numbers[0]), 10)
-                faithfulness = min(int(numbers[1]), 10)
-                completeness = min(int(numbers[2]), 10)
-                avg_score = (relevance + faithfulness + completeness) / 3.0
+            isrel = critique.get("ISREL", 5)
+            issup = critique.get("ISSUP", 5)
+            isuse = critique.get("ISUSE", 5)
+            avg = critique.get("avg_score", 5.0)
+            verdict = critique.get("verdict", "REVISE")
 
-                if avg_score >= 7:
-                    response.confidence = min(response.confidence + 0.1, 0.95)
-                    response.reasoning_trace += f" | Self-RAG: {relevance}/{faithfulness}/{completeness} (accepted)"
-                elif avg_score >= 5:
-                    # Attempt revision with explicit instruction on weak areas
-                    weak_area = "relevance" if relevance < faithfulness and relevance < completeness else (
-                        "faithfulness" if faithfulness < completeness else "completeness"
-                    )
-                    revision_prompt = f"""Revise this answer to improve {weak_area}.
+            response.reasoning_trace += f" | Self-RAG: R={isrel}/S={issup}/U={isuse} ({verdict})"
 
+            if verdict == "ACCEPT" or avg >= 7.0:
+                response.confidence = min(response.confidence + 0.1, 0.95)
+            elif avg >= 5.0:
+                # Identify weakest area and revise
+                weak = "relevance" if isrel <= issup and isrel <= isuse else (
+                    "faithfulness" if issup <= isuse else "completeness"
+                )
+                revision_prompt = f"""<|im_start|>system
+Revise this answer to improve {weak}. Be grounded in the evidence.
+<|im_end|>
+<|im_start|>user
 Question: {query.raw_query}
 Original answer: {response.answer[:300]}
+Evidence: {chr(10).join(f"[{i+1}] {e}" for i, e in enumerate(evidence_texts[:3]))}
 
-Evidence:
-{evidence_summary}
+Improved answer (focus on {weak}):
+<|im_end|>
+<|im_start|>assistant
+"""
+                revised = self.llm.generate(revision_prompt, max_tokens=400, temperature=0.3)
+                if len(revised.strip()) > 20:
+                    response.answer = revised.strip()
+                    response.reasoning_trace += f" → revised ({weak})"
+                    response.confidence = min(response.confidence + 0.05, 0.85)
+            else:
+                response.confidence = max(response.confidence - 0.15, 0.25)
+                response.reasoning_trace += " (low quality)"
 
-Improved answer (focus on {weak_area}):"""
-                    revised = self.llm.generate(revision_prompt, max_tokens=400, temperature=0.3)
+        except Exception as e:
+            response.reasoning_trace += f" | Self-RAG error: {str(e)[:50]}"
+
+        return response
+
+    async def _flare_active_retrieval(self, query: MemoryQuery,
+                                       response: OrchestratorResponse) -> OrchestratorResponse:
+        """
+        FLARE: Forward-Looking Active Retrieval (EMNLP 2023).
+        Identifies low-confidence segments in the answer and retrieves
+        additional evidence to fill gaps.
+        """
+        if self.llm.model is None or not response.answer:
+            return response
+
+        try:
+            # Split answer into sentences
+            sentences = re.split(r'(?<=[.!?])\s+', response.answer)
+            if len(sentences) < 2:
+                return response
+
+            # Identify sentences that might need more evidence
+            # (hedging language, vague claims, question marks)
+            uncertain_markers = [
+                "might", "possibly", "perhaps", "unclear", "not sure",
+                "limited", "insufficient", "partial", "?", "may have",
+            ]
+
+            sentences_to_verify = []
+            for i, sent in enumerate(sentences):
+                if any(marker in sent.lower() for marker in uncertain_markers):
+                    sentences_to_verify.append((i, sent))
+
+            if not sentences_to_verify:
+                return response
+
+            # Retrieve additional evidence for uncertain segments
+            additional_evidence = []
+            for idx, sent in sentences_to_verify[:2]:  # Max 2 FLARE retrievals
+                flare_query = MemoryQuery(
+                    raw_query=sent,
+                    intent=query.intent,
+                    complexity=0.4,
+                    embedding=self.retriever.embeddings.embed(sent).tolist(),
+                )
+                results = await self.retriever.retrieve(flare_query, top_k=3)
+                additional_evidence.extend(results)
+
+            if additional_evidence:
+                # Deduplicate
+                existing_ids = {r.memory.id for r in response.evidence}
+                new_evidence = [r for r in additional_evidence if r.memory.id not in existing_ids]
+
+                if new_evidence:
+                    response.evidence.extend(new_evidence[:3])
+                    new_evidence_texts = [r.memory.content[:200] for r in new_evidence[:3]]
+
+                    # Re-generate with augmented evidence
+                    all_evidence_texts = (
+                        [r.memory.content[:200] for r in response.evidence[:5]]
+                    )
+                    revised = self.llm.generate_faithful(
+                        query.raw_query, all_evidence_texts
+                    )
                     if len(revised.strip()) > 20:
                         response.answer = revised.strip()
-                        response.reasoning_trace += f" | Self-RAG: {relevance}/{faithfulness}/{completeness} → revised ({weak_area})"
-                        response.confidence = min(response.confidence + 0.05, 0.85)
-                    else:
-                        response.reasoning_trace += f" | Self-RAG: {relevance}/{faithfulness}/{completeness} (revision failed)"
-                else:
-                    response.confidence = max(response.confidence - 0.15, 0.25)
-                    response.reasoning_trace += f" | Self-RAG: {relevance}/{faithfulness}/{completeness} (low quality)"
-            elif numbers:
-                score = int(numbers[0])
-                if score >= 7:
-                    response.confidence = min(response.confidence + 0.1, 0.95)
-                else:
-                    response.confidence = max(response.confidence - 0.1, 0.3)
-                response.reasoning_trace += f" | Self-RAG: score={score}/10"
+                        response.confidence = min(response.confidence + 0.1, 0.85)
+                        response.reasoning_trace += f" | FLARE: +{len(new_evidence)} evidence"
+
         except Exception as e:
-            response.reasoning_trace += f" | Self-RAG: error ({str(e)[:50]})"
+            response.reasoning_trace += f" | FLARE error: {str(e)[:50]}"
 
         return response
 

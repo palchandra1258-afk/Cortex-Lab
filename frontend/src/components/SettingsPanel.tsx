@@ -21,24 +21,24 @@ export function SettingsPanel({ settings, onUpdate, onClose }: Props) {
   };
 
   return (
-    <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-40 w-full max-w-md">
-      <div className="rounded-2xl bg-surface-900/95 border border-surface-700/50 backdrop-blur-xl shadow-2xl overflow-hidden">
+    <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-40 w-full max-w-md fade-in">
+      <div className="rounded-2xl bg-white border border-slate-200 backdrop-blur-2xl shadow-2xl shadow-slate-200/60 overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-surface-800/50">
-          <h3 className="text-sm font-semibold text-surface-200">
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100">
+          <h3 className="text-sm font-semibold text-slate-700">
             Generation Settings
           </h3>
           <div className="flex items-center gap-1">
             <button
               onClick={handleReset}
-              className="rounded-lg p-1.5 text-surface-500 hover:text-surface-300 hover:bg-surface-800/50 transition-colors"
+              className="rounded-lg p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all duration-200"
               title="Reset to defaults"
             >
               <RotateCcw size={14} />
             </button>
             <button
               onClick={onClose}
-              className="rounded-lg p-1.5 text-surface-500 hover:text-surface-300 hover:bg-surface-800/50 transition-colors"
+              className="rounded-lg p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all duration-200"
             >
               <X size={14} />
             </button>
@@ -49,11 +49,11 @@ export function SettingsPanel({ settings, onUpdate, onClose }: Props) {
         <div className="px-5 py-4 space-y-5">
           {/* Temperature */}
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-xs font-medium text-surface-300">
+            <div className="flex items-center justify-between mb-2.5">
+              <label className="text-xs font-medium text-slate-600">
                 Temperature
               </label>
-              <span className="text-xs font-mono text-deepseek-400 bg-deepseek-500/10 px-2 py-0.5 rounded">
+              <span className="text-xs font-mono text-indigo-600 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-md">
                 {settings.temperature.toFixed(2)}
               </span>
             </div>
@@ -66,22 +66,22 @@ export function SettingsPanel({ settings, onUpdate, onClose }: Props) {
               onChange={(e) =>
                 onUpdate({ ...settings, temperature: parseFloat(e.target.value) })
               }
-              className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-surface-700 accent-deepseek-500"
+              className="w-full"
             />
-            <div className="flex justify-between mt-1 text-[10px] text-surface-600">
+            <div className="flex justify-between mt-1.5 text-[10px] text-slate-400">
               <span>Precise (0)</span>
-              <span className="text-deepseek-500/60">Recommended: 0.6</span>
+              <span className="text-indigo-500">Recommended: 0.6</span>
               <span>Creative (2)</span>
             </div>
           </div>
 
           {/* Top-P */}
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-xs font-medium text-surface-300">
+            <div className="flex items-center justify-between mb-2.5">
+              <label className="text-xs font-medium text-slate-600">
                 Top-P (Nucleus Sampling)
               </label>
-              <span className="text-xs font-mono text-deepseek-400 bg-deepseek-500/10 px-2 py-0.5 rounded">
+              <span className="text-xs font-mono text-indigo-600 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-md">
                 {settings.topP.toFixed(2)}
               </span>
             </div>
@@ -94,9 +94,9 @@ export function SettingsPanel({ settings, onUpdate, onClose }: Props) {
               onChange={(e) =>
                 onUpdate({ ...settings, topP: parseFloat(e.target.value) })
               }
-              className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-surface-700 accent-deepseek-500"
+              className="w-full"
             />
-            <div className="flex justify-between mt-1 text-[10px] text-surface-600">
+            <div className="flex justify-between mt-1.5 text-[10px] text-slate-400">
               <span>Focused (0)</span>
               <span>Diverse (1)</span>
             </div>
@@ -104,11 +104,11 @@ export function SettingsPanel({ settings, onUpdate, onClose }: Props) {
 
           {/* Max Tokens */}
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-xs font-medium text-surface-300">
+            <div className="flex items-center justify-between mb-2.5">
+              <label className="text-xs font-medium text-slate-600">
                 Max Tokens
               </label>
-              <span className="text-xs font-mono text-deepseek-400 bg-deepseek-500/10 px-2 py-0.5 rounded">
+              <span className="text-xs font-mono text-indigo-600 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-md">
                 {settings.maxTokens}
               </span>
             </div>
@@ -124,9 +124,9 @@ export function SettingsPanel({ settings, onUpdate, onClose }: Props) {
                   maxTokens: parseInt(e.target.value),
                 })
               }
-              className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-surface-700 accent-deepseek-500"
+              className="w-full"
             />
-            <div className="flex justify-between mt-1 text-[10px] text-surface-600">
+            <div className="flex justify-between mt-1.5 text-[10px] text-slate-400">
               <span>64</span>
               <span>8192</span>
             </div>
@@ -135,10 +135,10 @@ export function SettingsPanel({ settings, onUpdate, onClose }: Props) {
           {/* Streaming toggle */}
           <div className="flex items-center justify-between py-1">
             <div>
-              <label className="text-xs font-medium text-surface-300">
+              <label className="text-xs font-medium text-slate-600">
                 Streaming
               </label>
-              <p className="text-[10px] text-surface-600 mt-0.5">
+              <p className="text-[10px] text-slate-400 mt-0.5">
                 Show tokens as they are generated
               </p>
             </div>
@@ -146,10 +146,10 @@ export function SettingsPanel({ settings, onUpdate, onClose }: Props) {
               onClick={() =>
                 onUpdate({ ...settings, stream: !settings.stream })
               }
-              className={`relative h-6 w-11 rounded-full transition-colors duration-200 ${
+              className={`relative h-6 w-11 rounded-full transition-all duration-300 ${
                 settings.stream
-                  ? "bg-deepseek-600"
-                  : "bg-surface-700"
+                  ? "bg-indigo-600 shadow-sm shadow-indigo-200"
+                  : "bg-slate-300"
               }`}
             >
               <span
@@ -163,11 +163,11 @@ export function SettingsPanel({ settings, onUpdate, onClose }: Props) {
           {/* RAG Memory toggle */}
           <div className="flex items-center justify-between py-1">
             <div>
-              <label className="text-xs font-medium text-surface-300 flex items-center gap-1.5">
-                <Brain size={12} className="text-deepseek-400" />
+              <label className="text-xs font-medium text-slate-600 flex items-center gap-1.5">
+                <Brain size={12} className="text-indigo-500" />
                 RAG Memory
               </label>
-              <p className="text-[10px] text-surface-600 mt-0.5">
+              <p className="text-[10px] text-slate-400 mt-0.5">
                 Enable retrieval-augmented generation with memory
               </p>
             </div>
@@ -175,10 +175,10 @@ export function SettingsPanel({ settings, onUpdate, onClose }: Props) {
               onClick={() =>
                 onUpdate({ ...settings, useRAG: !settings.useRAG })
               }
-              className={`relative h-6 w-11 rounded-full transition-colors duration-200 ${
+              className={`relative h-6 w-11 rounded-full transition-all duration-300 ${
                 settings.useRAG
-                  ? "bg-emerald-600"
-                  : "bg-surface-700"
+                  ? "bg-emerald-500 shadow-sm shadow-emerald-200"
+                  : "bg-slate-300"
               }`}
             >
               <span

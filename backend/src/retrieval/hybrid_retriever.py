@@ -1,13 +1,15 @@
 """
 Multi-Channel Hybrid Retrieval Engine for Cortex Lab
-5 parallel retrieval channels with RRF fusion and cross-encoder reranking.
+5 parallel retrieval channels with RRF fusion and real cross-encoder reranking.
 
 Channels:
-1. Dense (BGE + FAISS) — w: 0.35
+1. Dense (BGE-large-en-v1.5 + FAISS) — w: 0.35
 2. Sparse (BM25 keyword) — w: 0.25
 3. Graph (Knowledge Graph traversal) — w: 0.20
 4. Temporal (SQL time filter) — w: 0.10
 5. Proposition (Atomic fact matching) — w: 0.10
+
+Reranking: BGE-reranker-v2-m3 cross-encoder (or embedding fallback)
 """
 
 import asyncio
@@ -23,7 +25,7 @@ import numpy as np
 from src.models import (
     CausalMemoryObject, MemoryQuery, QueryIntent, RetrievalResult
 )
-from src.models.embeddings import EmbeddingModel
+from src.models.embeddings import EmbeddingModel, CrossEncoderReranker
 from src.storage.vector_store import VectorStore
 from src.storage.metadata_store import MetadataStore
 from src.storage.knowledge_graph import KnowledgeGraph
@@ -31,7 +33,8 @@ from src.storage.knowledge_graph import KnowledgeGraph
 
 class HybridRetriever:
     """
-    Multi-channel hybrid retrieval with async parallel execution.
+    Multi-channel hybrid retrieval with async parallel execution
+    and real cross-encoder reranking.
     
     Channels execute simultaneously via asyncio:
     Sequential (naive): 100 + 50 + 80 + 30 + 90 = 350ms
@@ -54,11 +57,13 @@ class HybridRetriever:
     def __init__(self, embedding_model: EmbeddingModel,
                  vector_store: VectorStore,
                  metadata_store: MetadataStore,
-                 knowledge_graph: KnowledgeGraph):
+                 knowledge_graph: KnowledgeGraph,
+                 reranker: Optional[CrossEncoderReranker] = None):
         self.embeddings = embedding_model
         self.vectors = vector_store
         self.metadata = metadata_store
         self.graph = knowledge_graph
+        self.reranker = reranker  # Real cross-encoder reranker
 
         # BM25 persistent index (rebuilt on demand, invalidated on new ingestion)
         self._bm25_corpus: Dict[str, List[str]] = {}  # memory_id -> tokens
@@ -386,37 +391,52 @@ class HybridRetriever:
     def _cross_encoder_rerank(self, query: MemoryQuery, results: List[RetrievalResult],
                                top_k: int) -> List[RetrievalResult]:
         """
-        Cross-encoder style reranking using embedding-based relevance scoring.
-        Computes fine-grained query-document similarity to reorder results.
-        More accurate than initial retrieval scores since it considers
-        the full query-document pair jointly.
+        Real cross-encoder reranking using BGE-reranker-v2-m3.
+        Falls back to embedding-based scoring if cross-encoder is unavailable.
         """
-        if not results or query.embedding is None:
+        if not results:
+            return results[:top_k]
+
+        # ── Strategy A: Real Cross-Encoder (if available) ──
+        if self.reranker and self.reranker.model is not None:
+            try:
+                documents = [r.memory.content[:512] for r in results]
+                reranked_indices = self.reranker.rerank(
+                    query.raw_query, documents, top_k=top_k
+                )
+
+                reranked = []
+                for idx, score in reranked_indices:
+                    r = results[idx]
+                    # Blend cross-encoder score with original RRF score
+                    blended = 0.70 * score + 0.20 * r.score + 0.10 * r.memory.importance
+                    r.score = round(blended, 4)
+                    reranked.append(r)
+                return reranked
+            except Exception as e:
+                print(f"  ⚠ Cross-encoder rerank failed: {e}, falling back to embedding")
+
+        # ── Strategy B: Embedding-based fallback ──
+        if query.embedding is None:
             return results[:top_k]
 
         query_emb = np.array(query.embedding, dtype=np.float32)
 
         scored = []
         for r in results:
-            # Compute embedding-based relevance (simulates cross-encoder)
+            # Compute embedding-based relevance
             if r.memory.embedding:
                 mem_emb = np.array(r.memory.embedding, dtype=np.float32)
-                semantic_sim = float(np.dot(query_emb, mem_emb) / (
-                    np.linalg.norm(query_emb) * np.linalg.norm(mem_emb) + 1e-10
-                ))
             else:
                 mem_emb = self.embeddings.embed(r.memory.content)
-                semantic_sim = float(np.dot(query_emb, mem_emb) / (
-                    np.linalg.norm(query_emb) * np.linalg.norm(mem_emb) + 1e-10
-                ))
+            semantic_sim = float(np.dot(query_emb, mem_emb) / (
+                np.linalg.norm(query_emb) * np.linalg.norm(mem_emb) + 1e-10
+            ))
 
-            # Lexical overlap boost (simulates keyword matching component)
+            # Lexical overlap boost
             query_tokens = set(self._tokenize(query.raw_query))
             doc_tokens = set(self._tokenize(r.memory.content))
-            if query_tokens:
-                overlap = len(query_tokens & doc_tokens) / len(query_tokens)
-            else:
-                overlap = 0.0
+            overlap = len(query_tokens & doc_tokens) / max(len(query_tokens), 1)
 
             # Entity match boost
             entity_boost = 0.0
@@ -425,20 +445,18 @@ class HybridRetriever:
                     if ent.lower() in r.memory.content.lower():
                         entity_boost += 0.05
 
-            # Combined rerank score (weighted combination)
+            # Combined rerank score
             rerank_score = (
-                0.50 * semantic_sim +    # Semantic relevance
-                0.25 * r.score +         # Original RRF fusion score (normalized)
-                0.15 * overlap +         # Lexical match
-                0.10 * min(entity_boost, 0.2) + # Entity boost capped
-                0.05 * r.memory.importance  # Importance weight
+                0.50 * semantic_sim +
+                0.25 * r.score +
+                0.15 * overlap +
+                0.10 * min(entity_boost, 0.2) +
+                0.05 * r.memory.importance
             )
             scored.append((r, rerank_score))
 
-        # Sort by rerank score
         scored.sort(key=lambda x: x[1], reverse=True)
 
-        # Update scores on results
         reranked = []
         for r, score in scored[:top_k]:
             r.score = round(score, 4)

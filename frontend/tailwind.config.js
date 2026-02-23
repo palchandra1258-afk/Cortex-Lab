@@ -10,17 +10,17 @@ module.exports = {
     extend: {
       colors: {
         deepseek: {
-          50: "#eef6ff",
-          100: "#d9eaff",
-          200: "#bcdbff",
-          300: "#8ec4ff",
-          400: "#59a3ff",
-          500: "#3381ff",
-          600: "#1b5ff5",
-          700: "#144ae1",
-          800: "#173db6",
-          900: "#19378f",
-          950: "#142357",
+          50: "#eef2ff",
+          100: "#e0e7ff",
+          200: "#c7d2fe",
+          300: "#a5b4fc",
+          400: "#818cf8",
+          500: "#6366f1",
+          600: "#4f46e5",
+          700: "#4338ca",
+          800: "#3730a3",
+          900: "#312e81",
+          950: "#1e1b4b",
         },
         surface: {
           50: "#f8fafc",
@@ -43,12 +43,30 @@ module.exports = {
       animation: {
         "pulse-slow": "pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite",
         "bounce-dot": "bounce-dot 1.4s infinite ease-in-out both",
+        "fade-in": "fadeIn 0.3s ease-out",
+        "slide-in": "slideIn 0.2s ease-out",
+        "glow-pulse": "glowPulse 2s ease-in-out infinite",
       },
       keyframes: {
         "bounce-dot": {
           "0%, 80%, 100%": { transform: "scale(0)" },
           "40%": { transform: "scale(1)" },
         },
+        fadeIn: {
+          from: { opacity: "0", transform: "translateY(8px)" },
+          to: { opacity: "1", transform: "translateY(0)" },
+        },
+        slideIn: {
+          from: { opacity: "0", transform: "translateX(-12px)" },
+          to: { opacity: "1", transform: "translateX(0)" },
+        },
+        glowPulse: {
+          "0%, 100%": { opacity: "0.4" },
+          "50%": { opacity: "1" },
+        },
+      },
+      backgroundImage: {
+        "gradient-radial": "radial-gradient(var(--tw-gradient-stops))",
       },
     },
   },
