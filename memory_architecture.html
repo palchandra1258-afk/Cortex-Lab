@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Cortex Lab — 3-Layer Persistent Memory</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg:       #07090f;
+    --surface:  #0d1117;
+    --border:   #1c2333;
+    --faiss:    #00e5ff;
+    --duck:     #ffd166;
+    --graph:    #06d6a0;
+    --pulse:    #ff6b6b;
+    --text:     #e8eaf0;
+    --muted:    #6b7890;
+    --glow-f:   0 0 24px rgba(0,229,255,0.25);
+    --glow-d:   0 0 24px rgba(255,209,102,0.25);
+    --glow-g:   0 0 24px rgba(6,214,160,0.25);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Syne', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── grid background ── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(rgba(0,229,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,229,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 48px 24px 80px; position: relative; z-index: 1; }
+
+  /* ── header ── */
+  .header { text-align: center; margin-bottom: 56px; }
+  .badge {
+    display: inline-block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 3px;
+    color: var(--faiss);
+    border: 1px solid rgba(0,229,255,0.3);
+    padding: 6px 16px;
+    border-radius: 2px;
+    margin-bottom: 20px;
+    text-transform: uppercase;
+  }
+  h1 {
+    font-size: clamp(28px, 5vw, 52px);
+    font-weight: 800;
+    line-height: 1.1;
+    letter-spacing: -1px;
+    margin-bottom: 14px;
+  }
+  h1 span { color: var(--faiss); }
+  .subtitle {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: var(--muted);
+    letter-spacing: 1px;
+  }
+
+  /* ── user message box ── */
+  .user-msg {
+    background: linear-gradient(135deg, #0d1117 0%, #111827 100%);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--pulse);
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin-bottom: 12px;
+    position: relative;
+  }
+  .user-msg .label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: var(--pulse);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .user-msg .message {
+    font-size: 17px;
+    font-weight: 600;
+    color: #fff;
+    line-height: 1.5;
+  }
+  .user-msg .message em {
+    color: var(--faiss);
+    font-style: normal;
+  }
+
+  /* ── pipeline arrow ── */
+  .arrow-down {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 8px 0;
+  }
+  .arrow-down span {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 2px;
+  }
+  .arrow-line {
+    width: 2px;
+    height: 32px;
+    background: linear-gradient(to bottom, var(--border), var(--muted));
+    position: relative;
+  }
+  .arrow-line::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 50%;
+    transform: translateX(-50%);
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-top: 8px solid var(--muted);
+  }
+
+  /* ── ingestion box ── */
+  .ingest-box {
+    background: #0d1117;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 24px 28px;
+    margin-bottom: 12px;
+  }
+  .ingest-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 18px;
+  }
+  .mem-types {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+  }
+  .mem-type {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    position: relative;
+    overflow: hidden;
+  }
+  .mem-type::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    opacity: 0;
+    transition: opacity 0.25s;
+  }
+  .mem-type:hover::before, .mem-type.active::before { opacity: 1; }
+  .mem-type.episodic::before  { background: var(--faiss); }
+  .mem-type.semantic::before  { background: var(--duck); }
+  .mem-type.reflective::before{ background: var(--graph); }
+  .mem-type.belief::before    { background: var(--pulse); }
+
+  .mem-type:hover, .mem-type.active { transform: translateY(-2px); }
+  .mem-type.episodic:hover,  .mem-type.episodic.active  { border-color: var(--faiss); box-shadow: var(--glow-f); }
+  .mem-type.semantic:hover,  .mem-type.semantic.active  { border-color: var(--duck);  box-shadow: var(--glow-d); }
+  .mem-type.reflective:hover,.mem-type.reflective.active{ border-color: var(--graph); box-shadow: var(--glow-g); }
+  .mem-type.belief:hover,    .mem-type.belief.active    { border-color: var(--pulse); box-shadow: 0 0 24px rgba(255,107,107,0.25); }
+
+  .mem-icon { font-size: 24px; margin-bottom: 8px; }
+  .mem-name {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+  }
+  .episodic  .mem-name { color: var(--faiss); }
+  .semantic  .mem-name { color: var(--duck); }
+  .reflective.mem-name { color: var(--graph); }
+  .reflective .mem-name { color: var(--graph); }
+  .belief    .mem-name { color: var(--pulse); }
+  .mem-desc { font-size: 11px; color: var(--muted); line-height: 1.5; margin-bottom: 8px; }
+  .mem-example {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text);
+    background: rgba(255,255,255,0.04);
+    border-radius: 4px;
+    padding: 6px 8px;
+    line-height: 1.6;
+    display: none;
+  }
+  .mem-type.active .mem-example { display: block; }
+
+  /* ── storage section title ── */
+  .section-label {
+    text-align: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    margin: 8px 0 20px;
+  }
+  .section-label b { color: var(--text); }
+
+  /* ── 3 storage layers ── */
+  .layers { display: flex; flex-direction: column; gap: 16px; }
+
+  .layer {
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    overflow: hidden;
+    transition: box-shadow 0.3s;
+  }
+  .layer.faiss  { border-color: rgba(0,229,255,0.25); }
+  .layer.duck   { border-color: rgba(255,209,102,0.25); }
+  .layer.graph  { border-color: rgba(6,214,160,0.25); }
+  .layer:hover  { }
+
+  .layer-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 20px 24px;
+    cursor: pointer;
+    user-select: none;
+    background: var(--surface);
+  }
+  .layer-icon {
+    width: 44px; height: 44px;
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px;
+    flex-shrink: 0;
+  }
+  .faiss .layer-icon  { background: rgba(0,229,255,0.1); }
+  .duck  .layer-icon  { background: rgba(255,209,102,0.1); }
+  .graph .layer-icon  { background: rgba(6,214,160,0.1); }
+
+  .layer-meta { flex: 1; }
+  .layer-name {
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+    margin-bottom: 2px;
+  }
+  .faiss .layer-name { color: var(--faiss); }
+  .duck  .layer-name { color: var(--duck); }
+  .graph .layer-name { color: var(--graph); }
+
+  .layer-tagline {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .layer-question {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    background: rgba(255,255,255,0.05);
+    border-radius: 6px;
+    padding: 6px 14px;
+    flex-shrink: 0;
+  }
+  .toggle-icon {
+    font-size: 18px;
+    color: var(--muted);
+    transition: transform 0.3s;
+    flex-shrink: 0;
+  }
+  .layer.open .toggle-icon { transform: rotate(180deg); }
+
+  .layer-body {
+    display: none;
+    padding: 0 24px 24px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+  }
+  .layer.open .layer-body { display: block; }
+
+  /* tier cards for FAISS */
+  .tiers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 16px; }
+  @media (max-width: 640px) { .tiers { grid-template-columns: 1fr; } }
+  .tier {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+  }
+  .tier-badge {
+    display: inline-block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 2px;
+    padding: 3px 8px;
+    border-radius: 3px;
+    margin-bottom: 10px;
+  }
+  .hot  .tier-badge { background: rgba(255,107,107,0.15); color: #ff6b6b; }
+  .warm .tier-badge { background: rgba(255,209,102,0.15); color: var(--duck); }
+  .cold .tier-badge { background: rgba(0,229,255,0.15);   color: var(--faiss); }
+
+  .tier-name {
+    font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 6px;
+  }
+  .tier-stats {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    line-height: 1.9;
+  }
+  .tier-stats b { color: var(--text); }
+
+  .tier-why {
+    margin-top: 10px;
+    font-size: 11px;
+    color: var(--muted);
+    border-top: 1px solid var(--border);
+    padding-top: 8px;
+    line-height: 1.6;
+  }
+
+  /* DuckDB schema */
+  .schema-block {
+    margin-top: 16px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 20px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    line-height: 2;
+    overflow-x: auto;
+  }
+  .schema-block .kw { color: var(--duck); }
+  .schema-block .field { color: var(--text); }
+  .schema-block .type { color: var(--muted); }
+  .schema-block .comment { color: #3a4a6a; }
+
+  /* Graph viz */
+  .graph-viz {
+    margin-top: 16px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    justify-content: center;
+    min-height: 120px;
+  }
+  .node {
+    border-radius: 100px;
+    padding: 8px 18px;
+    font-size: 12px;
+    font-weight: 700;
+    border: 1.5px solid;
+    animation: nodeIn 0.5s ease forwards;
+    opacity: 0;
+  }
+  @keyframes nodeIn { to { opacity: 1; transform: scale(1); } from { opacity: 0; transform: scale(0.7); } }
+  .node.person { border-color: var(--faiss); color: var(--faiss); background: rgba(0,229,255,0.08); animation-delay: 0.1s; }
+  .node.role   { border-color: var(--duck); color: var(--duck); background: rgba(255,209,102,0.08); animation-delay: 0.2s; }
+  .node.idea   { border-color: var(--graph); color: var(--graph); background: rgba(6,214,160,0.08); animation-delay: 0.3s; }
+
+  .edge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    animation: nodeIn 0.5s ease forwards;
+    opacity: 0;
+  }
+  .edge.e1 { animation-delay: 0.35s; }
+  .edge.e2 { animation-delay: 0.45s; }
+  .edge.e3 { animation-delay: 0.55s; }
+  .edge-line { height: 1px; width: 32px; background: var(--border); }
+  .edge-arrow { color: var(--muted); }
+
+  /* ── combined query demo ── */
+  .query-demo {
+    margin-top: 40px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .query-demo-header {
+    background: linear-gradient(90deg, rgba(0,229,255,0.08), rgba(6,214,160,0.08));
+    border-bottom: 1px solid var(--border);
+    padding: 20px 24px;
+  }
+  .query-demo-header h3 {
+    font-size: 16px; font-weight: 700; margin-bottom: 4px;
+  }
+  .query-demo-header p {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; color: var(--muted);
+  }
+  .query-steps { padding: 24px; display: flex; flex-direction: column; gap: 14px; }
+
+  .qstep {
+    display: flex; gap: 16px; align-items: flex-start;
+    opacity: 0; transform: translateX(-16px);
+    transition: all 0.4s ease;
+  }
+  .qstep.visible { opacity: 1; transform: translateX(0); }
+  .qstep-num {
+    width: 28px; height: 28px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px; font-weight: 700;
+    flex-shrink: 0; margin-top: 2px;
+  }
+  .qstep:nth-child(1) .qstep-num { background: rgba(0,229,255,0.15); color: var(--faiss); }
+  .qstep:nth-child(2) .qstep-num { background: rgba(255,209,102,0.15); color: var(--duck); }
+  .qstep:nth-child(3) .qstep-num { background: rgba(6,214,160,0.15); color: var(--graph); }
+  .qstep:nth-child(4) .qstep-num { background: rgba(255,107,107,0.15); color: var(--pulse); }
+  .qstep:nth-child(5) .qstep-num { background: rgba(255,255,255,0.08); color: var(--text); }
+
+  .qstep-content h4 { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+  .qstep-content p  { font-size: 12px; color: var(--muted); line-height: 1.6; }
+  .qstep-content code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; color: var(--text);
+    background: rgba(255,255,255,0.06);
+    padding: 1px 6px; border-radius: 3px;
+  }
+
+  .answer-box {
+    margin: 0 24px 24px;
+    background: linear-gradient(135deg, rgba(6,214,160,0.06), rgba(0,229,255,0.06));
+    border: 1px solid rgba(6,214,160,0.3);
+    border-radius: 8px;
+    padding: 16px 20px;
+  }
+  .answer-box .label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; color: var(--graph); letter-spacing: 2px;
+    text-transform: uppercase; margin-bottom: 8px;
+  }
+  .answer-box p { font-size: 14px; line-height: 1.7; color: var(--text); }
+  .answer-box em { color: var(--graph); font-style: normal; font-weight: 700; }
+
+  /* ── run demo button ── */
+  .demo-btn {
+    display: block; margin: 0 auto 40px;
+    background: transparent;
+    border: 1.5px solid var(--faiss);
+    color: var(--faiss);
+    font-family: 'Syne', sans-serif;
+    font-size: 13px; font-weight: 700;
+    letter-spacing: 2px;
+    padding: 12px 36px;
+    border-radius: 4px;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.2s;
+  }
+  .demo-btn:hover {
+    background: var(--faiss);
+    color: var(--bg);
+  }
+
+  /* ── footer ── */
+  .footer {
+    text-align: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    padding-top: 40px;
+    border-top: 1px solid var(--border);
+    letter-spacing: 1px;
+  }
+  .footer span { color: var(--faiss); }
+
+  /* ── animations ── */
+  .fade-up {
+    opacity: 0; transform: translateY(24px);
+    animation: fadeUp 0.6s ease forwards;
+  }
+  @keyframes fadeUp { to { opacity: 1; transform: translateY(0); } }
+  .delay-1 { animation-delay: 0.1s; }
+  .delay-2 { animation-delay: 0.2s; }
+  .delay-3 { animation-delay: 0.3s; }
+  .delay-4 { animation-delay: 0.45s; }
+  .delay-5 { animation-delay: 0.6s; }
+
+  .highlight-bar {
+    height: 3px; border-radius: 2px; margin-bottom: 20px;
+    background: linear-gradient(90deg, var(--faiss), var(--graph), var(--duck));
+    animation: barGrow 1s ease forwards;
+    transform-origin: left;
+  }
+  @keyframes barGrow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+  .pulse-dot {
+    display: inline-block; width: 7px; height: 7px;
+    border-radius: 50%; background: var(--graph); margin-right: 6px;
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.7); }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- Header -->
+  <div class="header fade-up">
+    <div class="badge">Cortex Lab · Architecture</div>
+    <h1>3-Layer <span>Persistent Memory</span></h1>
+    <p class="subtitle">How a single user message becomes permanent, searchable, connected memory</p>
+  </div>
+  <div class="highlight-bar"></div>
+
+  <!-- User Message -->
+  <div class="user-msg fade-up delay-1">
+    <div class="label">📥 User Message (Example Input)</div>
+    <div class="message">
+      "I decided to <em>quit my job</em> today because my <em>startup idea</em> finally felt real."
+    </div>
+  </div>
+
+  <div class="arrow-down fade-up delay-2">
+    <div class="arrow-line"></div>
+    <span>MEMORY INGESTION PIPELINE</span>
+    <div class="arrow-line"></div>
+  </div>
+
+  <!-- Ingestion / Classification -->
+  <div class="ingest-box fade-up delay-2">
+    <div class="ingest-title">🧠 Step 1 — Classify into 4 Memory Types <span style="color:var(--text)">(click each to see what gets stored)</span></div>
+    <div class="mem-types">
+      <div class="mem-type episodic" onclick="toggleType(this)">
+        <div class="mem-icon">📅</div>
+        <div class="mem-name">EPISODIC</div>
+        <div class="mem-desc">"What happened" — events & conversations with time context</div>
+        <div class="mem-example">event: "quit job"<br/>date: 2026-03-10<br/>session: #4827<br/>emotion: excited-anxious</div>
+      </div>
+      <div class="mem-type semantic" onclick="toggleType(this)">
+        <div class="mem-icon">📚</div>
+        <div class="mem-name">SEMANTIC</div>
+        <div class="mem-desc">"What I know" — facts and concepts now established</div>
+        <div class="mem-example">fact: "startup idea = viable"<br/>topic: entrepreneurship<br/>importance: 0.92<br/>confidence: high</div>
+      </div>
+      <div class="mem-type reflective" onclick="toggleType(this)">
+        <div class="mem-icon">💡</div>
+        <div class="mem-name">REFLECTIVE</div>
+        <div class="mem-desc">"What I concluded" — summaries and insights (triggered by "I realized...")</div>
+        <div class="mem-example">insight: "Risk tolerance<br/>  has increased"<br/>derived_from: [job, startup]<br/>confidence: 0.85</div>
+      </div>
+      <div class="mem-type belief" onclick="toggleType(this)">
+        <div class="mem-icon">🧭</div>
+        <div class="mem-name">BELIEF</div>
+        <div class="mem-desc">"What I think is true" — implicit value & opinion shifts</div>
+        <div class="mem-example">shift: employment →<br/>  entrepreneurship<br/>strength: 0.88<br/>direction: positive</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow-down fade-up delay-3">
+    <div class="arrow-line"></div>
+    <span>STORED SIMULTANEOUSLY IN 3 LAYERS</span>
+    <div class="arrow-line"></div>
+  </div>
+
+  <p class="section-label fade-up delay-3"><b>Step 2</b> — 3 Storage Layers (expand each to explore)</p>
+
+  <!-- 3 Layers -->
+  <div class="layers fade-up delay-3">
+
+    <!-- Layer 1: FAISS -->
+    <div class="layer faiss" id="layer-faiss">
+      <div class="layer-header" onclick="toggleLayer('layer-faiss')">
+        <div class="layer-icon">🔷</div>
+        <div class="layer-meta">
+          <div class="layer-name">FAISS Vector Store</div>
+          <div class="layer-tagline">Semantic similarity · Hot / Warm / Cold tiers</div>
+        </div>
+        <div class="layer-question">"What felt similar to this?"</div>
+        <div class="toggle-icon">▼</div>
+      </div>
+      <div class="layer-body">
+        <p style="font-size:13px;color:var(--muted);margin-top:16px;line-height:1.7;">
+          The message is converted into a <strong style="color:var(--faiss)">1024-dimensional vector</strong> using BGE-large-en-v1.5.
+          This vector captures the <em>meaning</em> of the message — not the words, but the concept.
+          Similar future queries will pull this memory even if they use completely different words.
+        </p>
+        <div class="tiers">
+          <div class="tier hot">
+            <div class="tier-badge">HOT · &lt; 30 DAYS</div>
+            <div class="tier-name">HNSW Index</div>
+            <div class="tier-stats">
+              Speed: <b>~5ms</b><br/>
+              Recall: <b>~98%</b><br/>
+              Compress: <b>None</b><br/>
+              Precision: <b>float32</b>
+            </div>
+            <div class="tier-why">Recent memories accessed constantly. No compression — full accuracy, maximum speed.</div>
+          </div>
+          <div class="tier warm">
+            <div class="tier-badge">WARM · 30D – 1YR</div>
+            <div class="tier-name">IVF-SQ8 Index</div>
+            <div class="tier-stats">
+              Speed: <b>~15ms</b><br/>
+              Recall: <b>~95%</b><br/>
+              Compress: <b>4×</b><br/>
+              Precision: <b>int8</b>
+            </div>
+            <div class="tier-why">Used occasionally. float32 → int8 saves 75% storage with minimal accuracy loss.</div>
+          </div>
+          <div class="tier cold">
+            <div class="tier-badge">COLD · &gt; 1 YEAR</div>
+            <div class="tier-name">IVF-PQ Index</div>
+            <div class="tier-stats">
+              Speed: <b>~25ms</b><br/>
+              Recall: <b>~90%</b><br/>
+              Compress: <b>8–16×</b><br/>
+              Precision: <b>sub-vectors</b>
+            </div>
+            <div class="tier-why">Rarely accessed. Aggressive Product Quantization — 16× smaller. Old memories never deleted, just compressed.</div>
+          </div>
+        </div>
+        <p style="font-size:11px;color:var(--muted);margin-top:12px;font-family:'JetBrains Mono',monospace;">
+          → Today's "quit job" memory enters the <span style="color:#ff6b6b">HOT tier</span>. After 30 days → WARM. After 1 year → COLD. Always retrievable.
+        </p>
+      </div>
+    </div>
+
+    <!-- Layer 2: DuckDB -->
+    <div class="layer duck" id="layer-duck">
+      <div class="layer-header" onclick="toggleLayer('layer-duck')">
+        <div class="layer-icon">🟡</div>
+        <div class="layer-meta">
+          <div class="layer-name">DuckDB Metadata Store</div>
+          <div class="layer-tagline">Structured SQL · Time · Topic · Emotion</div>
+        </div>
+        <div class="layer-question">"When did this happen?"</div>
+        <div class="toggle-icon">▼</div>
+      </div>
+      <div class="layer-body">
+        <p style="font-size:13px;color:var(--muted);margin-top:16px;line-height:1.7;">
+          FAISS finds <em>similar</em> memories but cannot answer <strong style="color:var(--duck)">"show me everything from last March"</strong> or <strong style="color:var(--duck)">"find all moments I felt anxious."</strong>
+          DuckDB stores every memory as a structured SQL row — filterable by any field.
+        </p>
+        <div class="schema-block">
+<span class="kw">INSERT INTO</span> <span class="field">memories</span> (<br/>
+&nbsp;&nbsp;<span class="field">id</span>,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">-- unique ID</span><br/>
+&nbsp;&nbsp;<span class="field">content</span>,&nbsp;&nbsp;<span class="comment">-- "quit my job today..."</span><br/>
+&nbsp;&nbsp;<span class="field">type</span>,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">-- episodic / semantic / reflective / belief</span><br/>
+&nbsp;&nbsp;<span class="field">timestamp</span>,<span class="comment">-- 2026-03-10 14:23:07</span><br/>
+&nbsp;&nbsp;<span class="field">emotion</span>,&nbsp;&nbsp;<span class="comment">-- "excited-anxious"</span><br/>
+&nbsp;&nbsp;<span class="field">importance</span>,<span class="comment">-- 0.94 (high life event)</span><br/>
+&nbsp;&nbsp;<span class="field">topics</span>,&nbsp;&nbsp;&nbsp;<span class="comment">-- ["career", "startup", "decisions"]</span><br/>
+&nbsp;&nbsp;<span class="field">entities</span>,&nbsp;<span class="comment">-- ["Suraj", "job", "startup idea"]</span><br/>
+&nbsp;&nbsp;<span class="field">causes</span>,&nbsp;&nbsp;&nbsp;<span class="comment">-- ["startup felt real"]</span><br/>
+&nbsp;&nbsp;<span class="field">effects</span>&nbsp;&nbsp;&nbsp;<span class="comment">-- ["left employment"]</span><br/>
+);
+        </div>
+        <p style="font-size:11px;color:var(--muted);margin-top:12px;font-family:'JetBrains Mono',monospace;">
+          → Query: <span style="color:var(--duck)">SELECT * FROM memories WHERE 'career' = ANY(topics) ORDER BY timestamp</span><br/>
+          → Returns the full career timeline — every related memory, in order.
+        </p>
+      </div>
+    </div>
+
+    <!-- Layer 3: NetworkX -->
+    <div class="layer graph" id="layer-graph">
+      <div class="layer-header" onclick="toggleLayer('layer-graph')">
+        <div class="layer-icon">🟢</div>
+        <div class="layer-meta">
+          <div class="layer-name">NetworkX Knowledge Graph</div>
+          <div class="layer-tagline">Entity relationships · Causal edges · Temporal chains</div>
+        </div>
+        <div class="layer-question">"Why did this happen?"</div>
+        <div class="toggle-icon">▼</div>
+      </div>
+      <div class="layer-body">
+        <p style="font-size:13px;color:var(--muted);margin-top:16px;line-height:1.7;">
+          This is Cortex Lab's most unique layer. It stores <strong style="color:var(--graph)">relationships between entities</strong> as a directed graph.
+          Each edge has a type and timestamp — building a permanent map of cause and effect across your entire life.
+        </p>
+        <p style="font-size:12px;color:var(--muted);margin:12px 0 6px;font-family:'JetBrains Mono',monospace;">
+          From today's message, these edges are created:
+        </p>
+        <div class="graph-viz" id="graph-viz">
+          <div class="node person">Suraj</div>
+          <div class="edge e1"><div class="edge-line"></div><span style="color:var(--pulse)">──[quit]──▶</span><div class="edge-line"></div></div>
+          <div class="node role">job</div>
+          <div style="width:100%;display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:4px;">
+            <div class="node person">Suraj</div>
+            <div class="edge e2"><span style="color:var(--graph)">──[believes_in]──▶</span></div>
+            <div class="node idea">startup idea</div>
+            <div class="edge e3"><span style="color:var(--duck)">──[caused]──▶</span></div>
+            <div class="node role">quit job</div>
+          </div>
+        </div>
+        <p style="font-size:11px;color:var(--muted);margin-top:12px;font-family:'JetBrains Mono',monospace;line-height:1.8;">
+          + Previous edges already in graph:<br/>
+          <span style="color:var(--faiss)">Suraj ──[was_frustrated_by(3mo ago)]──▶ job</span><br/>
+          <span style="color:var(--faiss)">Suraj ──[explored(6mo ago)]──▶ startup idea</span><br/><br/>
+          → Now the system can answer <span style="color:var(--graph)">"Why did I quit?"</span> with real causal chains spanning months.
+        </p>
+      </div>
+    </div>
+
+  </div><!-- /layers -->
+
+  <!-- Query Demo -->
+  <div style="margin-top:40px;" class="fade-up delay-4">
+    <button class="demo-btn" onclick="runDemo()">▶ Run Live Query Demo</button>
+  </div>
+
+  <div class="query-demo fade-up delay-5" id="query-demo" style="display:none;">
+    <div class="query-demo-header">
+      <h3>Query: <span style="color:var(--faiss)">"What led to my career change?"</span></h3>
+      <p>Watch all 3 layers contribute to a single answer</p>
+    </div>
+    <div class="query-steps">
+      <div class="qstep" id="qs1">
+        <div class="qstep-num">1</div>
+        <div class="qstep-content">
+          <h4 style="color:var(--faiss)">FAISS — Semantic Recall</h4>
+          <p>Finds all memories with vectors close to "career change" — surfaces <code>quit job</code>, <code>job frustration</code>, <code>startup exploration</code> even without exact keyword matches. Returns top-20 by cosine similarity.</p>
+        </div>
+      </div>
+      <div class="qstep" id="qs2">
+        <div class="qstep-num">2</div>
+        <div class="qstep-content">
+          <h4 style="color:var(--duck)">DuckDB — Timeline Construction</h4>
+          <p>SQL query: <code>SELECT * FROM memories WHERE 'career' = ANY(topics) ORDER BY timestamp ASC</code> — returns the precise chronological sequence of every career-related memory.</p>
+        </div>
+      </div>
+      <div class="qstep" id="qs3">
+        <div class="qstep-num">3</div>
+        <div class="qstep-content">
+          <h4 style="color:var(--graph)">NetworkX — Causal Path Traversal</h4>
+          <p>Graph traversal from <code>job</code> → follows causal edges backwards → finds <code>frustration (3mo)</code> → <code>startup exploration (6mo)</code> → <code>belief shift</code> → <code>quit decision</code>. Multi-hop reasoning across months.</p>
+        </div>
+      </div>
+      <div class="qstep" id="qs4">
+        <div class="qstep-num">4</div>
+        <div class="qstep-content">
+          <h4 style="color:var(--pulse)">RRF Fusion + Reranking</h4>
+          <p>All 3 layers' results merged via Reciprocal Rank Fusion. BGE cross-encoder reranker selects the most relevant pieces. Combined latency: <code>~100ms</code>.</p>
+        </div>
+      </div>
+      <div class="qstep" id="qs5">
+        <div class="qstep-num">5</div>
+        <div class="qstep-content">
+          <h4 style="color:var(--text)">DeepSeek-R1-7B → Final Answer</h4>
+          <p>CausalAgent calls <code>LocalLLM.trace_causal_chain()</code> with fused context. Generates narrative explanation.</p>
+        </div>
+      </div>
+    </div>
+    <div class="answer-box" id="answer-box" style="display:none;">
+      <div class="label"><span class="pulse-dot"></span>Cortex Lab Response</div>
+      <p>
+        Over <em>8 months</em>, two forces compounded: growing frustration with your job (first noted <em>6 months ago</em>)
+        and an expanding belief in your startup idea (explored <em>6 months ago</em>, confidence rising steadily).
+        On <em>March 10, 2026</em>, the startup conviction crossed a threshold — making the cost of staying
+        feel greater than the risk of leaving. The causal chain: <em>frustration + conviction → decision → action</em>.
+      </p>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer" style="margin-top:56px;">
+    <span>Cortex Lab</span> · 3-Layer Persistent Memory · Built on FAISS · DuckDB · NetworkX
+  </div>
+
+</div><!-- /wrap -->
+
+<script>
+  function toggleType(el) {
+    const parent = el.closest('.mem-types');
+    const wasActive = el.classList.contains('active');
+    parent.querySelectorAll('.mem-type').forEach(t => t.classList.remove('active'));
+    if (!wasActive) el.classList.add('active');
+  }
+
+  function toggleLayer(id) {
+    const layer = document.getElementById(id);
+    const isOpen = layer.classList.contains('open');
+    // close all
+    document.querySelectorAll('.layer').forEach(l => l.classList.remove('open'));
+    if (!isOpen) layer.classList.add('open');
+  }
+
+  function runDemo() {
+    const demo = document.getElementById('query-demo');
+    demo.style.display = 'block';
+    demo.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    const steps = [1,2,3,4,5];
+    steps.forEach((n, i) => {
+      setTimeout(() => {
+        const el = document.getElementById('qs' + n);
+        if (el) el.classList.add('visible');
+      }, i * 600);
+    });
+
+    setTimeout(() => {
+      const ans = document.getElementById('answer-box');
+      if (ans) ans.style.display = 'block';
+    }, steps.length * 600 + 400);
+  }
+
+  // Open FAISS by default
+  window.addEventListener('load', () => {
+    setTimeout(() => toggleLayer('layer-faiss'), 500);
+  });
+</script>
+</body>
+</html>
