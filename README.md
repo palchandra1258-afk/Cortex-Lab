@@ -192,7 +192,7 @@ Cortex Lab implements a **9-layer Agentic RAG architecture** synthesizing **25+ 
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/Suraj-creation/Cortex-Lab.git
+git clone https://github.com/palchandra1258-afk/Cortex-Lab.git
 cd Cortex-Lab
 
 # 2. Create virtual environment
